@@ -74,7 +74,7 @@ export default function CartPage() {
                 <div className="flex flex-1 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <Link
-                      href={`/dresses/${item.dress.id}`}
+                      href={`/dress?id=${item.dress.id}`}
                       className="font-serif text-xl text-ink hover:text-neutral-700"
                     >
                       {item.dress.name}

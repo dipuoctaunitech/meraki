@@ -14,7 +14,7 @@ export function DressCard({ dress }: DressCardProps) {
 
   return (
     <Link
-      href={`/dresses/${dress.id}`}
+      href={`/dress?id=${dress.id}`}
       className="group block overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-luxury transition hover:border-neutral-300"
     >
       <div className="relative aspect-[3/4] w-full overflow-hidden bg-neutral-100">

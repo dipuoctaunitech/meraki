@@ -72,7 +72,7 @@ export function UploadedDressesList({ category }: UploadedDressesListProps) {
                     Edit
                   </Link>
                   <Link
-                    href={`/dresses/${dress.id}`}
+                    href={`/dress?id=${dress.id}`}
                     className="text-neutral-600 transition hover:text-ink"
                   >
                     View

@@ -31,6 +31,7 @@ if (backendImageHost) {
 }
 
 const nextConfig = {
+  output: "export",
   typedRoutes: true,
   allowedDevOrigins: ["192.168.1.6"],
   images: {
