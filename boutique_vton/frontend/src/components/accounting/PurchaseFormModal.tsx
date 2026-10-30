@@ -240,7 +240,7 @@ export function PurchaseFormModal({
               id="purchase-form-title"
               className="mt-1 font-serif text-xl text-ink sm:text-2xl"
             >
-              New purchase
+              New sale
             </h2>
           </div>
           <button
@@ -348,7 +348,7 @@ export function PurchaseFormModal({
             </button>
 
             <div className="flex items-center justify-between rounded-2xl border border-ink/10 bg-white px-4 py-3">
-              <span className="text-sm text-neutral-600">Purchase total</span>
+              <span className="text-sm text-neutral-600">Sale total</span>
               <span className="text-base font-medium text-ink">
                 {formatCurrency(grandTotal)}
               </span>
@@ -383,8 +383,9 @@ export function PurchaseFormModal({
           <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:flex-wrap sm:justify-end sm:gap-3">
             <Button
               type="button"
+              variant="outline"
               onClick={onClose}
-              className="w-full border border-ink bg-transparent text-ink hover:bg-ink hover:text-white sm:w-auto"
+              className="w-full sm:w-auto"
             >
               Cancel
             </Button>

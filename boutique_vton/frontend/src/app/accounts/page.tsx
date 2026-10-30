@@ -138,30 +138,33 @@ export default function AccountsPage() {
               Credit & Debit
             </h1>
             <p className="mt-3 max-w-xl text-sm text-neutral-600 sm:text-base">
-              Record purchases and expenses, filter by date, and download Excel
+              Record sales and expenses, filter by date, and download Excel
               reports.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:gap-3">
             <Button
               type="button"
+              variant="outline"
               onClick={() => setPurchaseOpen(true)}
-              className="col-span-2 gap-2 sm:col-span-1"
+              className="col-span-2 gap-2 px-4 sm:col-span-1 sm:px-6"
             >
               <Plus className="h-4 w-4" />
-              Purchase
+              Sales
             </Button>
             <Button
               type="button"
+              variant="outline"
               onClick={() => setExpenseOpen(true)}
-              className="gap-2 border border-ink bg-transparent px-4 text-ink hover:bg-ink hover:text-white sm:px-6"
+              className="gap-2 px-4 sm:px-6"
             >
               Expense
             </Button>
             <Button
               type="button"
+              variant="outline"
               onClick={() => void loadData()}
-              className="gap-2 border border-ink bg-transparent px-4 text-ink hover:bg-ink hover:text-white sm:px-6"
+              className="gap-2 px-4 sm:px-6"
               aria-label="Refresh"
             >
               <RefreshCw className="h-4 w-4" />
@@ -191,10 +194,10 @@ export default function AccountsPage() {
               key={value}
               type="button"
               onClick={() => setTab(value)}
-              className={`shrink-0 rounded-full px-4 py-2 text-sm transition ${
+              className={`shrink-0 rounded-full border border-ink px-4 py-2 text-sm transition ${
                 tab === value
                   ? "bg-ink text-white"
-                  : "bg-white/70 text-neutral-600 hover:text-ink"
+                  : "bg-transparent text-ink hover:bg-ink hover:text-white active:bg-ink active:text-white"
               }`}
             >
               {label}
@@ -207,10 +210,10 @@ export default function AccountsPage() {
             <button
               type="button"
               onClick={() => setShowDateFilter((prev) => !prev)}
-              className={`inline-flex w-full items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm transition sm:w-auto sm:justify-start ${
+              className={`inline-flex w-full items-center justify-center gap-2 rounded-full border border-ink px-4 py-2.5 text-sm transition sm:w-auto sm:justify-start ${
                 showDateFilter || hasDateFilter
                   ? "bg-ink text-white"
-                  : "bg-champagne text-ink hover:bg-sand/40"
+                  : "bg-transparent text-ink hover:bg-ink hover:text-white active:bg-ink active:text-white"
               }`}
             >
               <CalendarRange className="h-4 w-4" />
@@ -227,7 +230,7 @@ export default function AccountsPage() {
               onClick={() =>
                 setSortOrder((prev) => (prev === "desc" ? "asc" : "desc"))
               }
-              className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-champagne px-4 py-2.5 text-sm text-ink transition hover:bg-sand/40 sm:w-auto sm:justify-start"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-ink bg-transparent px-4 py-2.5 text-sm text-ink transition hover:bg-ink hover:text-white active:bg-ink active:text-white sm:w-auto sm:justify-start"
             >
               <ArrowDownUp className="h-4 w-4" />
               {sortOrder === "desc" ? "New to old" : "Old to new"}
@@ -237,7 +240,7 @@ export default function AccountsPage() {
               type="button"
               onClick={() => void handleDownload()}
               disabled={downloading}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-ink px-4 py-2.5 text-sm text-white transition hover:opacity-90 disabled:opacity-50 sm:w-auto sm:justify-start"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-ink bg-transparent px-4 py-2.5 text-sm text-ink transition hover:bg-ink hover:text-white active:bg-ink active:text-white disabled:opacity-50 sm:w-auto sm:justify-start"
             >
               <Download className="h-4 w-4" />
               {downloading ? "Downloading…" : "Download report"}
@@ -294,7 +297,7 @@ export default function AccountsPage() {
             </p>
           ) : entries.length === 0 ? (
             <p className="rounded-2xl border border-sand/50 bg-white/60 px-4 py-10 text-center text-sm text-neutral-500">
-              No entries for this view. Adjust filters or add a purchase /
+              No entries for this view. Adjust filters or add a sale /
               expense.
             </p>
           ) : (
@@ -342,7 +345,7 @@ export default function AccountsPage() {
                     colSpan={10}
                     className="px-4 py-10 text-center text-neutral-500"
                   >
-                    No entries for this view. Adjust filters or add a purchase /
+                    No entries for this view. Adjust filters or add a sale /
                     expense.
                   </td>
                 </tr>

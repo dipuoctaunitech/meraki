@@ -56,9 +56,9 @@ export type ReportFilters = {
 
 export const PAYMENT_OPTIONS: { value: PaymentMethod; label: string }[] = [
   { value: "cash", label: "Cash" },
-  { value: "gpay", label: "GPay" },
-  { value: "bank_hdfc", label: "Bank Transfer HDFC" },
-  { value: "bank_icici", label: "Bank Transfer ICICI" }
+  { value: "gpay", label: "UPI" },
+  { value: "bank_hdfc", label: "HDFC Bank Transfer" },
+  { value: "bank_icici", label: "UPI Axis" }
 ];
 
 function apiBase(): string {

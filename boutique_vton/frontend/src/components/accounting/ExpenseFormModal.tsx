@@ -18,7 +18,8 @@ const EXPENSE_CATEGORIES = [
   "Water bill",
   "Salary",
   "Packaging",
-  "Other"
+  "Purchase",
+  "Misc"
 ] as const;
 
 type ExpenseFormModalProps = {
@@ -66,7 +67,7 @@ export function ExpenseFormModal({
 
   const amountNum = Number(amount) || 0;
   const expenseName =
-    category === "Other" ? customCategory.trim() : category;
+    category === "Misc" ? customCategory.trim() : category;
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -171,7 +172,7 @@ export function ExpenseFormModal({
                 </button>
               ))}
             </div>
-            {category === "Other" ? (
+            {category === "Misc" ? (
               <input
                 type="text"
                 required
@@ -247,8 +248,9 @@ export function ExpenseFormModal({
           <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:flex-wrap sm:justify-end sm:gap-3">
             <Button
               type="button"
+              variant="outline"
               onClick={onClose}
-              className="w-full border border-ink bg-transparent text-ink hover:bg-ink hover:text-white sm:w-auto"
+              className="w-full sm:w-auto"
             >
               Cancel
             </Button>
