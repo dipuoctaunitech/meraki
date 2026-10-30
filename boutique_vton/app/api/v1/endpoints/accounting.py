@@ -47,6 +47,24 @@ def create_accounting_entry(
     return AccountingEntryRead.model_validate(entry)
 
 
+@router.put(
+    "/entries/{entry_id}",
+    response_model=AccountingEntryRead,
+)
+def update_accounting_entry(
+    entry_id: int,
+    payload: AccountingEntryCreate,
+    session: Session = Depends(get_session),
+) -> AccountingEntryRead:
+    entry = accounting_service.update_entry(session, entry_id, payload)
+    if entry is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Entry not found",
+        )
+    return AccountingEntryRead.model_validate(entry)
+
+
 @router.delete(
     "/entries/{entry_id}",
     status_code=status.HTTP_204_NO_CONTENT,

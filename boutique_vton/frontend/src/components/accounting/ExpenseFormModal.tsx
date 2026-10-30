@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/Button";
 import {
   createAccountingEntry,
   formatCurrency,
+  updateAccountingEntry,
+  type AccountingEntry,
   type PaymentMethod
 } from "@/lib/accounting";
 
@@ -22,11 +24,27 @@ const EXPENSE_CATEGORIES = [
   "Misc"
 ] as const;
 
+type ExpenseCategory = (typeof EXPENSE_CATEGORIES)[number];
+
 type ExpenseFormModalProps = {
   open: boolean;
   onClose: () => void;
   onSaved: () => void;
+  entry?: AccountingEntry | null;
 };
+
+function resolveCategory(itemName: string): {
+  category: ExpenseCategory;
+  customCategory: string;
+} {
+  const match = EXPENSE_CATEGORIES.find(
+    (value) => value !== "Misc" && value === itemName
+  );
+  if (match) {
+    return { category: match, customCategory: "" };
+  }
+  return { category: "Misc", customCategory: itemName };
+}
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -35,12 +53,12 @@ function todayIso(): string {
 export function ExpenseFormModal({
   open,
   onClose,
-  onSaved
+  onSaved,
+  entry = null
 }: ExpenseFormModalProps) {
+  const isEditing = Boolean(entry);
   const [entryDate, setEntryDate] = useState(todayIso());
-  const [category, setCategory] = useState<(typeof EXPENSE_CATEGORIES)[number]>(
-    "Electricity bill"
-  );
+  const [category, setCategory] = useState<ExpenseCategory>("Electricity bill");
   const [customCategory, setCustomCategory] = useState("");
   const [amount, setAmount] = useState("");
   const [paidTo, setPaidTo] = useState("");
@@ -52,16 +70,28 @@ export function ExpenseFormModal({
 
   useEffect(() => {
     if (!open) return;
-    setEntryDate(todayIso());
-    setCategory("Electricity bill");
-    setCustomCategory("");
-    setAmount("");
-    setPaidTo("");
-    setIsPaid(false);
-    setPaymentMethod("");
-    setNotes("");
+    if (entry) {
+      const resolved = resolveCategory(entry.item_name);
+      setEntryDate(entry.entry_date);
+      setCategory(resolved.category);
+      setCustomCategory(resolved.customCategory);
+      setAmount(String(entry.item_price));
+      setPaidTo(entry.customer_name === "-" ? "" : entry.customer_name);
+      setIsPaid(entry.is_paid);
+      setPaymentMethod(entry.payment_method ?? "");
+      setNotes(entry.notes ?? "");
+    } else {
+      setEntryDate(todayIso());
+      setCategory("Electricity bill");
+      setCustomCategory("");
+      setAmount("");
+      setPaidTo("");
+      setIsPaid(false);
+      setPaymentMethod("");
+      setNotes("");
+    }
     setError(null);
-  }, [open]);
+  }, [open, entry]);
 
   if (!open) return null;
 
@@ -88,8 +118,8 @@ export function ExpenseFormModal({
 
     setSaving(true);
     try {
-      await createAccountingEntry({
-        entry_type: "debit",
+      const payload = {
+        entry_type: "debit" as const,
         entry_date: entryDate,
         customer_name: paidTo.trim() || "-",
         phone: "",
@@ -99,7 +129,12 @@ export function ExpenseFormModal({
         is_paid: isPaid,
         payment_method: isPaid ? (paymentMethod as PaymentMethod) : null,
         notes: notes.trim() || null
-      });
+      };
+      if (isEditing && entry) {
+        await updateAccountingEntry(entry.id, payload);
+      } else {
+        await createAccountingEntry(payload);
+      }
       onSaved();
       onClose();
     } catch (err) {
@@ -126,7 +161,7 @@ export function ExpenseFormModal({
               id="expense-form-title"
               className="mt-1 font-serif text-xl text-ink sm:text-2xl"
             >
-              New expense
+              {isEditing ? "Edit expense" : "New expense"}
             </h2>
             <p className="mt-2 text-sm text-neutral-600">
               Record bills and shop expenses like rent, electricity, or internet.

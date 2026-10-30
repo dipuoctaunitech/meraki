@@ -118,6 +118,40 @@ class TestAccountingEntries:
         missing = test_client.delete(f"/api/v1/accounting/entries/{entry_id}")
         assert missing.status_code == 404
 
+    def test_update_entry(self, test_client: TestClient) -> None:
+        create = test_client.post(
+            "/api/v1/accounting/entries",
+            json=_credit_payload(item_name="Kurti", item_price=500, quantity=1),
+        )
+        assert create.status_code == 201
+        entry_id = create.json()["id"]
+
+        updated = test_client.put(
+            f"/api/v1/accounting/entries/{entry_id}",
+            json=_credit_payload(
+                item_name="Kurti XL",
+                item_price=650,
+                quantity=2,
+                is_paid=True,
+                payment_method="cash",
+            ),
+        )
+        assert updated.status_code == 200
+        body = updated.json()
+        assert body["id"] == entry_id
+        assert body["item_name"] == "Kurti XL"
+        assert body["item_price"] == 650
+        assert body["quantity"] == 2
+        assert body["total"] == 1300
+        assert body["is_paid"] is True
+        assert body["payment_method"] == "cash"
+
+        missing = test_client.put(
+            "/api/v1/accounting/entries/999999",
+            json=_credit_payload(),
+        )
+        assert missing.status_code == 404
+
     def test_phone_prefix_suggestions(self, test_client: TestClient) -> None:
         create = test_client.post(
             "/api/v1/accounting/entries",

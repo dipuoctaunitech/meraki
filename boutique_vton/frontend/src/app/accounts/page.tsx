@@ -5,6 +5,7 @@ import {
   ArrowDownUp,
   CalendarRange,
   Download,
+  Pencil,
   Plus,
   RefreshCw,
   Trash2,
@@ -41,6 +42,9 @@ export default function AccountsPage() {
   const [error, setError] = useState<string | null>(null);
   const [purchaseOpen, setPurchaseOpen] = useState(false);
   const [expenseOpen, setExpenseOpen] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<AccountingEntry | null>(
+    null
+  );
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const activeFilters = useCallback((): ReportFilters => {
@@ -106,6 +110,27 @@ export default function AccountsPage() {
     setDateTo("");
   }
 
+  function handleEdit(entry: AccountingEntry) {
+    setEditingEntry(entry);
+    if (entry.entry_type === "credit") {
+      setPurchaseOpen(true);
+      setExpenseOpen(false);
+    } else {
+      setExpenseOpen(true);
+      setPurchaseOpen(false);
+    }
+  }
+
+  function closePurchaseModal() {
+    setPurchaseOpen(false);
+    setEditingEntry(null);
+  }
+
+  function closeExpenseModal() {
+    setExpenseOpen(false);
+    setEditingEntry(null);
+  }
+
   async function handleDelete(entry: AccountingEntry) {
     const confirmed = window.confirm(
       `Delete this ${entry.entry_type} entry for "${entry.item_name}" (${formatCurrency(entry.total)})?`
@@ -146,7 +171,10 @@ export default function AccountsPage() {
             <Button
               type="button"
               variant="outline"
-              onClick={() => setPurchaseOpen(true)}
+              onClick={() => {
+                setEditingEntry(null);
+                setPurchaseOpen(true);
+              }}
               className="col-span-2 gap-2 px-4 sm:col-span-1 sm:px-6"
             >
               <Plus className="h-4 w-4" />
@@ -155,7 +183,10 @@ export default function AccountsPage() {
             <Button
               type="button"
               variant="outline"
-              onClick={() => setExpenseOpen(true)}
+              onClick={() => {
+                setEditingEntry(null);
+                setExpenseOpen(true);
+              }}
               className="gap-2 px-4 sm:px-6"
             >
               Expense
@@ -306,6 +337,7 @@ export default function AccountsPage() {
                 key={entry.id}
                 entry={entry}
                 deleting={deletingId === entry.id}
+                onEdit={() => handleEdit(entry)}
                 onDelete={() => void handleDelete(entry)}
               />
             ))
@@ -375,16 +407,27 @@ export default function AccountsPage() {
                       {paymentLabel(entry.payment_method)}
                     </td>
                     <td className="px-4 py-3">
-                      <button
-                        type="button"
-                        onClick={() => void handleDelete(entry)}
-                        disabled={deletingId === entry.id}
-                        className="inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 text-xs text-neutral-500 transition hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
-                        aria-label={`Delete ${entry.item_name}`}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        {deletingId === entry.id ? "Deleting…" : "Delete"}
-                      </button>
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleEdit(entry)}
+                          className="inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 text-xs text-neutral-500 transition hover:bg-ink/5 hover:text-ink"
+                          aria-label={`Edit ${entry.item_name}`}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleDelete(entry)}
+                          disabled={deletingId === entry.id}
+                          className="inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 text-xs text-neutral-500 transition hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
+                          aria-label={`Delete ${entry.item_name}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          {deletingId === entry.id ? "Deleting…" : "Delete"}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -396,13 +439,19 @@ export default function AccountsPage() {
 
       <PurchaseFormModal
         open={purchaseOpen}
-        onClose={() => setPurchaseOpen(false)}
+        onClose={closePurchaseModal}
         onSaved={() => void loadData()}
+        entry={
+          editingEntry?.entry_type === "credit" ? editingEntry : null
+        }
       />
       <ExpenseFormModal
         open={expenseOpen}
-        onClose={() => setExpenseOpen(false)}
+        onClose={closeExpenseModal}
         onSaved={() => void loadData()}
+        entry={
+          editingEntry?.entry_type === "debit" ? editingEntry : null
+        }
       />
     </main>
   );
@@ -411,10 +460,12 @@ export default function AccountsPage() {
 function EntryCard({
   entry,
   deleting,
+  onEdit,
   onDelete
 }: {
   entry: AccountingEntry;
   deleting: boolean;
+  onEdit: () => void;
   onDelete: () => void;
 }) {
   return (
@@ -454,7 +505,15 @@ function EntryCard({
           </dd>
         </div>
       </dl>
-      <div className="mt-3 flex justify-end border-t border-sand/40 pt-3">
+      <div className="mt-3 flex justify-end gap-1 border-t border-sand/40 pt-3">
+        <button
+          type="button"
+          onClick={onEdit}
+          className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs text-neutral-500 transition hover:bg-ink/5 hover:text-ink"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+          Edit
+        </button>
         <button
           type="button"
           onClick={onDelete}

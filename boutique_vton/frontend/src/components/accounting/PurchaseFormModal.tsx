@@ -14,6 +14,8 @@ import {
   formatCurrency,
   lookupCustomerByPhone,
   searchCustomersByPhone,
+  updateAccountingEntry,
+  type AccountingEntry,
   type CustomerMatch,
   type PaymentMethod
 } from "@/lib/accounting";
@@ -22,6 +24,7 @@ type PurchaseFormModalProps = {
   open: boolean;
   onClose: () => void;
   onSaved: () => void;
+  entry?: AccountingEntry | null;
 };
 
 function todayIso(): string {
@@ -47,8 +50,10 @@ function emptyLine(): PurchaseLine {
 export function PurchaseFormModal({
   open,
   onClose,
-  onSaved
+  onSaved,
+  entry = null
 }: PurchaseFormModalProps) {
+  const isEditing = Boolean(entry);
   const [entryDate, setEntryDate] = useState(todayIso());
   const [customerName, setCustomerName] = useState("");
   const [phone, setPhone] = useState("");
@@ -66,18 +71,36 @@ export function PurchaseFormModal({
 
   useEffect(() => {
     if (!open) return;
-    setEntryDate(todayIso());
-    setCustomerName("");
-    setPhone("");
-    setLines([emptyLine()]);
-    setIsPaid(false);
-    setPaymentMethod("");
-    setNotes("");
+    if (entry) {
+      setEntryDate(entry.entry_date);
+      setCustomerName(entry.customer_name);
+      setPhone(entry.phone);
+      setLines([
+        {
+          id: createLineId(),
+          name: entry.item_name,
+          price: String(entry.item_price),
+          quantity: String(entry.quantity)
+        }
+      ]);
+      setIsPaid(entry.is_paid);
+      setPaymentMethod(entry.payment_method ?? "");
+      setNotes(entry.notes ?? "");
+      setPhoneHint(null);
+    } else {
+      setEntryDate(todayIso());
+      setCustomerName("");
+      setPhone("");
+      setLines([emptyLine()]);
+      setIsPaid(false);
+      setPaymentMethod("");
+      setNotes("");
+      setPhoneHint(null);
+    }
     setError(null);
-    setPhoneHint(null);
     setPhoneSuggestions([]);
     setShowPhoneSuggestions(false);
-  }, [open]);
+  }, [open, entry]);
 
   useEffect(() => {
     if (!open) return;
@@ -200,8 +223,9 @@ export function PurchaseFormModal({
     setSaving(true);
     try {
       const sharedNotes = notes.trim() || null;
-      for (const line of validLines) {
-        await createAccountingEntry({
+      if (isEditing && entry) {
+        const line = validLines[0];
+        await updateAccountingEntry(entry.id, {
           entry_type: "credit",
           entry_date: entryDate,
           customer_name: customerName.trim(),
@@ -213,6 +237,21 @@ export function PurchaseFormModal({
           payment_method: isPaid ? (paymentMethod as PaymentMethod) : null,
           notes: sharedNotes
         });
+      } else {
+        for (const line of validLines) {
+          await createAccountingEntry({
+            entry_type: "credit",
+            entry_date: entryDate,
+            customer_name: customerName.trim(),
+            phone: digits,
+            item_name: line.name,
+            item_price: line.price,
+            quantity: line.quantity,
+            is_paid: isPaid,
+            payment_method: isPaid ? (paymentMethod as PaymentMethod) : null,
+            notes: sharedNotes
+          });
+        }
       }
       onSaved();
       onClose();
@@ -240,7 +279,7 @@ export function PurchaseFormModal({
               id="purchase-form-title"
               className="mt-1 font-serif text-xl text-ink sm:text-2xl"
             >
-              New sale
+              {isEditing ? "Edit sale" : "New sale"}
             </h2>
           </div>
           <button
@@ -332,23 +371,25 @@ export function PurchaseFormModal({
                 key={line.id}
                 line={line}
                 index={index}
-                canRemove={lines.length > 1}
+                canRemove={!isEditing && lines.length > 1}
                 onChange={updateLine}
                 onRemove={removeLine}
               />
             ))}
 
-            <button
-              type="button"
-              onClick={addLine}
-              className="inline-flex w-full items-center justify-center gap-1.5 rounded-full border border-ink px-3 py-2.5 text-sm text-ink transition hover:bg-ink hover:text-white sm:w-auto"
-            >
-              <Plus className="h-4 w-4" />
-              Add item
-            </button>
+            {!isEditing ? (
+              <button
+                type="button"
+                onClick={addLine}
+                className="inline-flex w-full items-center justify-center gap-1.5 rounded-full border border-ink px-3 py-2.5 text-sm text-ink transition hover:bg-ink hover:text-white sm:w-auto"
+              >
+                <Plus className="h-4 w-4" />
+                Add item
+              </button>
+            ) : null}
 
             <div className="flex items-center justify-between rounded-2xl border border-ink/10 bg-white px-4 py-3">
-              <span className="text-sm text-neutral-600">Sale total</span>
+              <span className="text-sm text-neutral-600">Sale Total</span>
               <span className="text-base font-medium text-ink">
                 {formatCurrency(grandTotal)}
               </span>

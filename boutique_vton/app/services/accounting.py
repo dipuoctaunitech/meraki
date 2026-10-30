@@ -19,9 +19,9 @@ from app.schemas.accounting import AccountingEntryCreate, AccountingSummary
 
 PAYMENT_LABELS: dict[PaymentMethod, str] = {
     PaymentMethod.CASH: "Cash",
-    PaymentMethod.GPAY: "GPay",
-    PaymentMethod.BANK_HDFC: "Bank Transfer HDFC",
-    PaymentMethod.BANK_ICICI: "Bank Transfer ICICI",
+    PaymentMethod.GPAY: "UPI",
+    PaymentMethod.BANK_HDFC: "HDFC Bank Transfer",
+    PaymentMethod.BANK_ICICI: "UPI Axis",
 }
 
 
@@ -147,6 +147,43 @@ def delete_entry(session: Session, entry_id: int) -> bool:
     session.delete(entry)
     session.commit()
     return True
+
+
+def update_entry(
+    session: Session,
+    entry_id: int,
+    payload: AccountingEntryCreate,
+) -> Optional[AccountingEntry]:
+    entry = get_entry(session, entry_id)
+    if entry is None:
+        return None
+
+    customer_id: Optional[int] = None
+    customer_name = payload.customer_name or "-"
+    phone = payload.phone or ""
+
+    if payload.entry_type == EntryType.CREDIT:
+        customer = upsert_customer(session, customer_name, phone)
+        customer_id = customer.id
+        upsert_catalog_item(session, payload.item_name, payload.item_price)
+
+    entry.entry_type = payload.entry_type
+    entry.entry_date = payload.entry_date
+    entry.customer_id = customer_id
+    entry.customer_name = customer_name
+    entry.phone = phone
+    entry.item_name = payload.item_name
+    entry.item_price = payload.item_price
+    entry.quantity = payload.quantity
+    entry.total = round(payload.item_price * payload.quantity, 2)
+    entry.is_paid = payload.is_paid
+    entry.payment_method = payload.payment_method
+    entry.notes = payload.notes
+
+    session.add(entry)
+    session.commit()
+    session.refresh(entry)
+    return entry
 
 
 def _apply_filters(

@@ -108,6 +108,19 @@ export async function createAccountingEntry(
   return response.json();
 }
 
+export async function updateAccountingEntry(
+  entryId: number,
+  payload: AccountingEntryInput
+): Promise<AccountingEntry> {
+  const response = await fetch(`${apiBase()}/accounting/entries/${entryId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) throw new Error(await readError(response));
+  return response.json();
+}
+
 export async function deleteAccountingEntry(entryId: number): Promise<void> {
   const response = await fetch(
     `${apiBase()}/accounting/entries/${entryId}`,
