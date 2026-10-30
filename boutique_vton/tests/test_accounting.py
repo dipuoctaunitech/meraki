@@ -100,6 +100,24 @@ class TestAccountingEntries:
         )
         assert response.status_code == 422
 
+    def test_delete_entry(self, test_client: TestClient) -> None:
+        create = test_client.post(
+            "/api/v1/accounting/entries",
+            json=_credit_payload(),
+        )
+        assert create.status_code == 201
+        entry_id = create.json()["id"]
+
+        deleted = test_client.delete(f"/api/v1/accounting/entries/{entry_id}")
+        assert deleted.status_code == 204
+
+        listed = test_client.get("/api/v1/accounting/entries")
+        assert listed.status_code == 200
+        assert all(row["id"] != entry_id for row in listed.json())
+
+        missing = test_client.delete(f"/api/v1/accounting/entries/{entry_id}")
+        assert missing.status_code == 404
+
     def test_phone_prefix_suggestions(self, test_client: TestClient) -> None:
         create = test_client.post(
             "/api/v1/accounting/entries",

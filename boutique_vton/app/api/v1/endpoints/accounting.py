@@ -47,6 +47,23 @@ def create_accounting_entry(
     return AccountingEntryRead.model_validate(entry)
 
 
+@router.delete(
+    "/entries/{entry_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_accounting_entry(
+    entry_id: int,
+    session: Session = Depends(get_session),
+) -> Response:
+    deleted = accounting_service.delete_entry(session, entry_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Entry not found",
+        )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/entries", response_model=list[AccountingEntryRead])
 def list_accounting_entries(
     entry_type: Optional[EntryType] = Query(default=None),

@@ -108,6 +108,14 @@ export async function createAccountingEntry(
   return response.json();
 }
 
+export async function deleteAccountingEntry(entryId: number): Promise<void> {
+  const response = await fetch(
+    `${apiBase()}/accounting/entries/${entryId}`,
+    { method: "DELETE" }
+  );
+  if (!response.ok) throw new Error(await readError(response));
+}
+
 export async function listAccountingEntries(
   filters: ReportFilters = {}
 ): Promise<AccountingEntry[]> {

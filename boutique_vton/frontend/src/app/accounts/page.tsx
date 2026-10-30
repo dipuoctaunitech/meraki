@@ -7,6 +7,7 @@ import {
   Download,
   Plus,
   RefreshCw,
+  Trash2,
   X
 } from "lucide-react";
 import { DateInput } from "@/components/accounting/DateInput";
@@ -14,6 +15,7 @@ import { ExpenseFormModal } from "@/components/accounting/ExpenseFormModal";
 import { PurchaseFormModal } from "@/components/accounting/PurchaseFormModal";
 import { Button } from "@/components/ui/Button";
 import {
+  deleteAccountingEntry,
   downloadAccountingReport,
   formatCurrency,
   getAccountingSummary,
@@ -39,6 +41,7 @@ export default function AccountsPage() {
   const [error, setError] = useState<string | null>(null);
   const [purchaseOpen, setPurchaseOpen] = useState(false);
   const [expenseOpen, setExpenseOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const activeFilters = useCallback((): ReportFilters => {
     const filters: ReportFilters = {
@@ -101,6 +104,24 @@ export default function AccountsPage() {
   function clearDateFilter() {
     setDateFrom("");
     setDateTo("");
+  }
+
+  async function handleDelete(entry: AccountingEntry) {
+    const confirmed = window.confirm(
+      `Delete this ${entry.entry_type} entry for "${entry.item_name}" (${formatCurrency(entry.total)})?`
+    );
+    if (!confirmed) return;
+
+    setDeletingId(entry.id);
+    setError(null);
+    try {
+      await deleteAccountingEntry(entry.id);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete entry");
+    } finally {
+      setDeletingId(null);
+    }
   }
 
   const hasDateFilter = Boolean(dateFrom || dateTo);
@@ -278,7 +299,12 @@ export default function AccountsPage() {
             </p>
           ) : (
             entries.map((entry) => (
-              <EntryCard key={entry.id} entry={entry} />
+              <EntryCard
+                key={entry.id}
+                entry={entry}
+                deleting={deletingId === entry.id}
+                onDelete={() => void handleDelete(entry)}
+              />
             ))
           )}
         </div>
@@ -297,13 +323,14 @@ export default function AccountsPage() {
                 <th className="px-4 py-3 font-medium">Total</th>
                 <th className="px-4 py-3 font-medium">Paid</th>
                 <th className="px-4 py-3 font-medium">Method</th>
+                <th className="px-4 py-3 font-medium"> </th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={10}
                     className="px-4 py-10 text-center text-neutral-500"
                   >
                     Loading entries…
@@ -312,7 +339,7 @@ export default function AccountsPage() {
               ) : entries.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={10}
                     className="px-4 py-10 text-center text-neutral-500"
                   >
                     No entries for this view. Adjust filters or add a purchase /
@@ -344,6 +371,18 @@ export default function AccountsPage() {
                     <td className="px-4 py-3">
                       {paymentLabel(entry.payment_method)}
                     </td>
+                    <td className="px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={() => void handleDelete(entry)}
+                        disabled={deletingId === entry.id}
+                        className="inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 text-xs text-neutral-500 transition hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
+                        aria-label={`Delete ${entry.item_name}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        {deletingId === entry.id ? "Deleting…" : "Delete"}
+                      </button>
+                    </td>
                   </tr>
                 ))
               )}
@@ -366,7 +405,15 @@ export default function AccountsPage() {
   );
 }
 
-function EntryCard({ entry }: { entry: AccountingEntry }) {
+function EntryCard({
+  entry,
+  deleting,
+  onDelete
+}: {
+  entry: AccountingEntry;
+  deleting: boolean;
+  onDelete: () => void;
+}) {
   return (
     <article className="rounded-2xl border border-sand/50 bg-white/70 p-4">
       <div className="flex items-start justify-between gap-3">
@@ -404,6 +451,17 @@ function EntryCard({ entry }: { entry: AccountingEntry }) {
           </dd>
         </div>
       </dl>
+      <div className="mt-3 flex justify-end border-t border-sand/40 pt-3">
+        <button
+          type="button"
+          onClick={onDelete}
+          disabled={deleting}
+          className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs text-neutral-500 transition hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+          {deleting ? "Deleting…" : "Delete"}
+        </button>
+      </div>
     </article>
   );
 }

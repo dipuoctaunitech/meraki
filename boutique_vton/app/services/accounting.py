@@ -136,6 +136,19 @@ def create_entry(session: Session, payload: AccountingEntryCreate) -> Accounting
     return entry
 
 
+def get_entry(session: Session, entry_id: int) -> Optional[AccountingEntry]:
+    return session.get(AccountingEntry, entry_id)
+
+
+def delete_entry(session: Session, entry_id: int) -> bool:
+    entry = get_entry(session, entry_id)
+    if entry is None:
+        return False
+    session.delete(entry)
+    session.commit()
+    return True
+
+
 def _apply_filters(
     statement,
     *,
