@@ -29,6 +29,11 @@ export default function HomePage() {
               View cart
             </Button>
           </Link>
+          <Link href="/accounts">
+            <Button className="gap-2 border border-ink bg-transparent text-ink hover:bg-ink hover:text-white">
+              Accounts
+            </Button>
+          </Link>
         </div>
       </section>
     </main>

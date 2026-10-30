@@ -3,6 +3,7 @@ from collections.abc import Generator
 from sqlmodel import Session, SQLModel, create_engine
 
 from app.core.config import settings
+import app.models  # noqa: F401 — register SQLModel tables
 
 engine_options: dict[str, object] = {"echo": False}
 if settings.database_url.startswith("sqlite"):

@@ -6,17 +6,20 @@ A boutique ecommerce storefront with a FastAPI backend scaffold and Next.js fron
 
 - Product catalog with detail pages
 - Shopping cart (client-side, localStorage)
+- Credit & debit accounting (purchases, expenses, paid status, Excel reports)
 - FastAPI health check and static file serving
-- SQLModel database scaffold for future orders/products
+- SQLModel database for accounting customers and ledger entries
 
 ## Project Structure
 
 ```text
 app/                  # FastAPI backend
+  models/             # Customer + AccountingEntry
+  api/v1/endpoints/   # Accounting API
 frontend/             # Next.js storefront
-  src/app/            # Pages: /, /dresses, /dresses/[id], /cart
+  src/app/            # Pages: /, /collection, /upload, /cart, /accounts
   src/components/     # UI components
-  src/lib/            # Catalog data
+  src/lib/            # Catalog + accounting API client
 ```
 
 ## Requirements
@@ -44,6 +47,16 @@ npm run dev
 ```
 
 Storefront: `http://localhost:3000`
+
+Accounting UI: `http://localhost:3000/accounts`
+
+API routes:
+
+- `POST /api/v1/accounting/entries` — create credit/debit entry
+- `GET /api/v1/accounting/entries` — list with filters
+- `GET /api/v1/accounting/summary` — totals
+- `GET /api/v1/accounting/customers/by-phone/{phone}` — customer autofill
+- `GET /api/v1/accounting/reports/export` — Excel download
 
 ## Tests
 
