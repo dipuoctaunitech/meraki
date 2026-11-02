@@ -5,6 +5,7 @@ import {
   ArrowDownUp,
   CalendarRange,
   Download,
+  LogOut,
   Pencil,
   Plus,
   RefreshCw,
@@ -13,7 +14,9 @@ import {
 } from "lucide-react";
 import { DateInput } from "@/components/accounting/DateInput";
 import { ExpenseFormModal } from "@/components/accounting/ExpenseFormModal";
+import { NameSearchInput } from "@/components/accounting/NameSearchInput";
 import { PurchaseFormModal } from "@/components/accounting/PurchaseFormModal";
+import { SalaryPanel } from "@/components/accounting/SalaryPanel";
 import { Button } from "@/components/ui/Button";
 import {
   deleteAccountingEntry,
@@ -22,19 +25,37 @@ import {
   getAccountingSummary,
   listAccountingEntries,
   paymentLabel,
+  searchPersonNames,
   type AccountingEntry,
   type AccountingSummary,
   type EntryType,
   type ReportFilters,
   type SortOrder
 } from "@/lib/accounting";
+import {
+  clearAccountsSession,
+  fetchAccountsMe,
+  getAccountsUsername,
+  loginAccounts
+} from "@/lib/auth";
 
 export default function AccountsPage() {
+  const [authChecked, setAuthChecked] = useState(false);
+  const [authenticated, setAuthenticated] = useState(false);
+  const [authUsername, setAuthUsername] = useState<string | null>(null);
+  const [loginUsername, setLoginUsername] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [loginLoading, setLoginLoading] = useState(false);
+
   const [entries, setEntries] = useState<AccountingEntry[]>([]);
   const [summary, setSummary] = useState<AccountingSummary | null>(null);
+  const [view, setView] = useState<"ledger" | "salary">("ledger");
   const [tab, setTab] = useState<"all" | EntryType>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [searchName, setSearchName] = useState("");
+  const [debouncedSearchName, setDebouncedSearchName] = useState("");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const [showDateFilter, setShowDateFilter] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -47,6 +68,33 @@ export default function AccountsPage() {
   );
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
+  useEffect(() => {
+    let cancelled = false;
+    async function checkAuth() {
+      const username = await fetchAccountsMe();
+      if (cancelled) return;
+      if (username) {
+        setAuthenticated(true);
+        setAuthUsername(username);
+      } else {
+        setAuthenticated(false);
+        setAuthUsername(null);
+      }
+      setAuthChecked(true);
+    }
+    void checkAuth();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      setDebouncedSearchName(searchName.trim());
+    }, 250);
+    return () => window.clearTimeout(handle);
+  }, [searchName]);
+
   const activeFilters = useCallback((): ReportFilters => {
     const filters: ReportFilters = {
       sort_order: sortOrder
@@ -54,10 +102,12 @@ export default function AccountsPage() {
     if (tab !== "all") filters.entry_type = tab;
     if (dateFrom) filters.date_from = dateFrom;
     if (dateTo) filters.date_to = dateTo;
+    if (debouncedSearchName) filters.name = debouncedSearchName;
     return filters;
-  }, [tab, dateFrom, dateTo, sortOrder]);
+  }, [tab, dateFrom, dateTo, sortOrder, debouncedSearchName]);
 
   const loadData = useCallback(async () => {
+    if (!authenticated || view !== "ledger") return;
     setLoading(true);
     setError(null);
     try {
@@ -75,6 +125,14 @@ export default function AccountsPage() {
       setEntries(entryRows);
       setSummary(summaryData);
     } catch (err) {
+      if (
+        err instanceof Error &&
+        /not authenticated|invalid token|token expired|401/i.test(err.message)
+      ) {
+        clearAccountsSession();
+        setAuthenticated(false);
+        setAuthUsername(null);
+      }
       setError(
         err instanceof Error
           ? err.message
@@ -83,11 +141,51 @@ export default function AccountsPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeFilters, dateFrom, dateTo]);
+  }, [activeFilters, dateFrom, dateTo, view, authenticated]);
 
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  async function handleLogin(event: React.FormEvent) {
+    event.preventDefault();
+    setLoginError(null);
+    setLoginLoading(true);
+    try {
+      const result = await loginAccounts(loginUsername, loginPassword);
+      setAuthUsername(result.username);
+      setAuthenticated(true);
+      setLoginPassword("");
+    } catch (err) {
+      setLoginError(err instanceof Error ? err.message : "Login failed");
+    } finally {
+      setLoginLoading(false);
+    }
+  }
+
+  function clearSearch() {
+    setSearchName("");
+    setDebouncedSearchName("");
+  }
+
+  function switchLedgerTab(next: "all" | EntryType) {
+    if (next !== tab) clearSearch();
+    setTab(next);
+  }
+
+  function switchView(next: "ledger" | "salary") {
+    if (next !== view) clearSearch();
+    setView(next);
+  }
+
+  function handleLogout() {
+    clearAccountsSession();
+    setAuthenticated(false);
+    setAuthUsername(null);
+    setEntries([]);
+    setSummary(null);
+    clearSearch();
+  }
 
   async function handleDownload() {
     setError(null);
@@ -97,7 +195,9 @@ export default function AccountsPage() {
     }
     setDownloading(true);
     try {
-      await downloadAccountingReport(activeFilters());
+      const filters = activeFilters();
+      if (searchName.trim()) filters.name = searchName.trim();
+      await downloadAccountingReport(filters);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Download failed");
     } finally {
@@ -151,6 +251,69 @@ export default function AccountsPage() {
 
   const hasDateFilter = Boolean(dateFrom || dateTo);
 
+  if (!authChecked) {
+    return (
+      <main className="min-h-screen bg-champagne">
+        <section className="mx-auto flex w-full max-w-md flex-col px-4 py-20">
+          <p className="text-center text-sm text-neutral-500">Checking access…</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (!authenticated) {
+    return (
+      <main className="min-h-screen bg-champagne">
+        <section className="mx-auto flex w-full max-w-md flex-col px-4 py-12 sm:py-20">
+          <p className="text-xs uppercase tracking-[0.3em] text-sand">
+            Meraki books
+          </p>
+          <h1 className="mt-2 font-serif text-3xl text-ink sm:text-4xl">
+            Accounts login
+          </h1>
+          <p className="mt-3 text-sm text-neutral-600">
+            Sign in to view sales, expenses, and salary records.
+          </p>
+          <form
+            onSubmit={handleLogin}
+            className="mt-8 space-y-4 rounded-2xl border border-sand/50 bg-white/70 p-5 sm:p-6"
+          >
+            <label className="block text-sm">
+              <span className="mb-1.5 block text-neutral-600">Username</span>
+              <input
+                type="text"
+                autoComplete="username"
+                required
+                value={loginUsername}
+                onChange={(e) => setLoginUsername(e.target.value)}
+                className="w-full rounded-xl border border-sand/60 bg-white px-3 py-2.5 text-ink outline-none focus:border-ink"
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="mb-1.5 block text-neutral-600">Password</span>
+              <input
+                type="password"
+                autoComplete="current-password"
+                required
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+                className="w-full rounded-xl border border-sand/60 bg-white px-3 py-2.5 text-ink outline-none focus:border-ink"
+              />
+            </label>
+            {loginError ? (
+              <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
+                {loginError}
+              </p>
+            ) : null}
+            <Button type="submit" isLoading={loginLoading} className="w-full">
+              Sign in
+            </Button>
+          </form>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-champagne">
       <section className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8 md:px-12 md:py-10">
@@ -166,12 +329,16 @@ export default function AccountsPage() {
               Record sales and expenses, filter by date, and download Excel
               reports.
             </p>
+            <p className="mt-2 text-xs text-neutral-500">
+              Signed in as {authUsername || getAccountsUsername() || "user"}
+            </p>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:gap-3">
             <Button
               type="button"
               variant="outline"
               onClick={() => {
+                switchView("ledger");
                 setEditingEntry(null);
                 setPurchaseOpen(true);
               }}
@@ -184,6 +351,7 @@ export default function AccountsPage() {
               type="button"
               variant="outline"
               onClick={() => {
+                switchView("ledger");
                 setEditingEntry(null);
                 setExpenseOpen(true);
               }}
@@ -194,17 +362,50 @@ export default function AccountsPage() {
             <Button
               type="button"
               variant="outline"
-              onClick={() => void loadData()}
+              onClick={() => switchView("salary")}
+              className={`gap-2 px-4 sm:px-6 ${
+                view === "salary" ? "bg-ink text-white hover:bg-ink hover:text-white" : ""
+              }`}
+            >
+              Salary
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                if (view === "salary") return;
+                void loadData();
+              }}
               className="gap-2 px-4 sm:px-6"
               aria-label="Refresh"
             >
               <RefreshCw className="h-4 w-4" />
               <span className="sm:hidden">Refresh</span>
             </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleLogout}
+              className="gap-2 px-4 sm:px-6"
+              aria-label="Log out"
+            >
+              <LogOut className="h-4 w-4" />
+              <span className="sm:hidden">Logout</span>
+            </Button>
           </div>
         </div>
 
-        {summary ? (
+        {view === "salary" ? (
+          <SalaryPanel
+            onAuthLost={() => {
+              clearAccountsSession();
+              setAuthenticated(false);
+              setAuthUsername(null);
+            }}
+          />
+        ) : null}
+
+        {view === "ledger" && summary ? (
           <div className="mt-6 grid grid-cols-2 gap-3 sm:mt-8 sm:gap-4 lg:mt-10 lg:grid-cols-4">
             <SummaryTile label="Credit total" value={summary.credit_total} />
             <SummaryTile label="Debit total" value={summary.debit_total} />
@@ -213,6 +414,7 @@ export default function AccountsPage() {
           </div>
         ) : null}
 
+        {view === "ledger" ? (
         <div className="mt-6 flex gap-2 overflow-x-auto border-b border-sand/60 pb-3 scrollbar-none sm:mt-8 md:mt-10 md:flex-wrap">
           {(
             [
@@ -224,7 +426,7 @@ export default function AccountsPage() {
             <button
               key={value}
               type="button"
-              onClick={() => setTab(value)}
+              onClick={() => switchLedgerTab(value)}
               className={`shrink-0 rounded-full border border-ink px-4 py-2 text-sm transition ${
                 tab === value
                   ? "bg-ink text-white"
@@ -235,7 +437,10 @@ export default function AccountsPage() {
             </button>
           ))}
         </div>
+        ) : null}
 
+        {view === "ledger" ? (
+        <>
         <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-sand/50 bg-white/60 p-3 sm:p-4">
           <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center">
             <button
@@ -276,6 +481,13 @@ export default function AccountsPage() {
               <Download className="h-4 w-4" />
               {downloading ? "Downloading…" : "Download report"}
             </button>
+
+            <NameSearchInput
+              value={searchName}
+              onChange={setSearchName}
+              fetchNames={searchPersonNames}
+              placeholder="Search name"
+            />
           </div>
 
           {showDateFilter ? (
@@ -307,8 +519,8 @@ export default function AccountsPage() {
                 </button>
               ) : null}
               <p className="text-xs text-neutral-500 sm:col-span-2 lg:flex-1">
-                Applies to the current {tab === "all" ? "All" : tab} tab.
-                Download uses the same filters.
+                Applies to the current {tab === "all" ? "All" : tab} tab,
+                including name search. Download uses the same filters.
               </p>
             </div>
           ) : null}
@@ -435,6 +647,8 @@ export default function AccountsPage() {
             </tbody>
           </table>
         </div>
+        </>
+        ) : null}
       </section>
 
       <PurchaseFormModal

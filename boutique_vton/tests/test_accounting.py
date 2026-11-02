@@ -206,6 +206,74 @@ class TestAccountingEntries:
         assert search_again.json()[0]["name"] == "linen dress"
         assert search_again.json()[0]["price"] == 2400
 
+    def test_name_suggestions(self, test_client: TestClient) -> None:
+        test_client.post(
+            "/api/v1/accounting/entries",
+            json=_credit_payload(customer_name="Asha Kumar", phone="9876543210"),
+        )
+        test_client.post(
+            "/api/v1/accounting/entries",
+            json=_credit_payload(
+                customer_name="Anita Menon",
+                phone="9876543212",
+                item_name="Dress",
+            ),
+        )
+
+        suggestions = test_client.get(
+            "/api/v1/accounting/names",
+            params={"q": "a"},
+        )
+        assert suggestions.status_code == 200
+        names = suggestions.json()
+        assert "Asha Kumar" in names
+        assert "Anita Menon" in names
+
+    def test_name_search_filters_entries_and_export(
+        self, test_client: TestClient
+    ) -> None:
+        test_client.post(
+            "/api/v1/accounting/entries",
+            json=_credit_payload(
+                customer_name="Asha Kumar",
+                phone="9876543210",
+                item_name="Kurti A",
+            ),
+        )
+        test_client.post(
+            "/api/v1/accounting/entries",
+            json=_credit_payload(
+                customer_name="Bina Nair",
+                phone="9876543211",
+                item_name="Kurti B",
+            ),
+        )
+        test_client.post(
+            "/api/v1/accounting/entries",
+            json=_debit_payload(
+                customer_name="Asha Kumar",
+                item_name="Refund",
+                item_price=100,
+            ),
+        )
+
+        filtered = test_client.get(
+            "/api/v1/accounting/entries",
+            params={"name": "asha"},
+        )
+        assert filtered.status_code == 200
+        rows = filtered.json()
+        assert len(rows) == 2
+        assert all("asha" in row["customer_name"].lower() for row in rows)
+
+        export = test_client.get(
+            "/api/v1/accounting/reports/export",
+            params={"name": "asha"},
+        )
+        assert export.status_code == 200
+        assert export.content[:2] == b"PK"
+        assert "asha" in export.headers.get("content-disposition", "").lower()
+
     def test_date_filter_and_sort_order(self, test_client: TestClient) -> None:
         test_client.post(
             "/api/v1/accounting/entries",

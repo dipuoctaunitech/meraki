@@ -1,3 +1,5 @@
+import { authHeaders, clearAccountsSession } from "@/lib/auth";
+
 export type EntryType = "credit" | "debit";
 
 export type PaymentMethod =
@@ -51,6 +53,7 @@ export type ReportFilters = {
   is_paid?: "" | "true" | "false";
   date_from?: string;
   date_to?: string;
+  name?: string;
   sort_order?: SortOrder;
 };
 
@@ -76,9 +79,23 @@ function toQuery(filters: ReportFilters): string {
   }
   if (filters.date_from) params.set("date_from", filters.date_from);
   if (filters.date_to) params.set("date_to", filters.date_to);
+  if (filters.name?.trim()) params.set("name", filters.name.trim());
   if (filters.sort_order) params.set("sort_order", filters.sort_order);
   const query = params.toString();
   return query ? `?${query}` : "";
+}
+
+async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  const headers = {
+    ...(init.headers || {}),
+    ...authHeaders()
+  };
+  const response = await fetch(input, { ...init, headers });
+  if (response.status === 401) {
+    clearAccountsSession();
+    throw new Error("Not authenticated");
+  }
+  return response;
 }
 
 async function readError(response: Response): Promise<string> {
@@ -99,7 +116,7 @@ async function readError(response: Response): Promise<string> {
 export async function createAccountingEntry(
   payload: AccountingEntryInput
 ): Promise<AccountingEntry> {
-  const response = await fetch(`${apiBase()}/accounting/entries`, {
+  const response = await apiFetch(`${apiBase()}/accounting/entries`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
@@ -112,7 +129,7 @@ export async function updateAccountingEntry(
   entryId: number,
   payload: AccountingEntryInput
 ): Promise<AccountingEntry> {
-  const response = await fetch(`${apiBase()}/accounting/entries/${entryId}`, {
+  const response = await apiFetch(`${apiBase()}/accounting/entries/${entryId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
@@ -122,7 +139,7 @@ export async function updateAccountingEntry(
 }
 
 export async function deleteAccountingEntry(entryId: number): Promise<void> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${apiBase()}/accounting/entries/${entryId}`,
     { method: "DELETE" }
   );
@@ -132,7 +149,7 @@ export async function deleteAccountingEntry(entryId: number): Promise<void> {
 export async function listAccountingEntries(
   filters: ReportFilters = {}
 ): Promise<AccountingEntry[]> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${apiBase()}/accounting/entries${toQuery(filters)}`
   );
   if (!response.ok) throw new Error(await readError(response));
@@ -142,7 +159,7 @@ export async function listAccountingEntries(
 export async function getAccountingSummary(
   filters: ReportFilters = {}
 ): Promise<AccountingSummary> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${apiBase()}/accounting/summary${toQuery(filters)}`
   );
   if (!response.ok) throw new Error(await readError(response));
@@ -160,10 +177,27 @@ export async function lookupCustomerByPhone(
 ): Promise<CustomerMatch | null> {
   const digits = phone.replace(/\D/g, "");
   if (digits.length < 10) return null;
-  const response = await fetch(
+  const response = await apiFetch(
     `${apiBase()}/accounting/customers/by-phone/${encodeURIComponent(digits)}`
   );
   if (response.status === 404) return null;
+  if (!response.ok) throw new Error(await readError(response));
+  return response.json();
+}
+
+export async function searchPersonNames(
+  query: string,
+  limit = 8
+): Promise<string[]> {
+  const cleaned = query.trim();
+  if (cleaned.length < 1) return [];
+  const params = new URLSearchParams({
+    q: cleaned,
+    limit: String(limit)
+  });
+  const response = await apiFetch(
+    `${apiBase()}/accounting/names?${params.toString()}`
+  );
   if (!response.ok) throw new Error(await readError(response));
   return response.json();
 }
@@ -178,7 +212,7 @@ export async function searchCustomersByPhone(
     q: digits,
     limit: String(limit)
   });
-  const response = await fetch(
+  const response = await apiFetch(
     `${apiBase()}/accounting/customers?${params.toString()}`
   );
   if (!response.ok) throw new Error(await readError(response));
@@ -198,7 +232,7 @@ export async function searchCatalogItems(
   const params = new URLSearchParams();
   if (query.trim()) params.set("q", query.trim());
   params.set("limit", String(limit));
-  const response = await fetch(
+  const response = await apiFetch(
     `${apiBase()}/accounting/items?${params.toString()}`
   );
   if (!response.ok) throw new Error(await readError(response));
@@ -208,7 +242,7 @@ export async function searchCatalogItems(
 export async function downloadAccountingReport(
   filters: ReportFilters = {}
 ): Promise<void> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${apiBase()}/accounting/reports/export${toQuery(filters)}`
   );
   if (!response.ok) throw new Error(await readError(response));

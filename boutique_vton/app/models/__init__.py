@@ -6,6 +6,8 @@ from app.models.accounting import (
     Customer,
     EntryType,
     PaymentMethod,
+    SalaryAdvance,
+    SalaryRecord,
 )
 
 __all__ = [
@@ -14,4 +16,6 @@ __all__ = [
     "Customer",
     "EntryType",
     "PaymentMethod",
+    "SalaryAdvance",
+    "SalaryRecord",
 ]

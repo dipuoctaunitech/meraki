@@ -81,3 +81,37 @@ class AccountingEntry(SQLModel, table=True):
         default_factory=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+
+
+class SalaryRecord(SQLModel, table=True):
+    """Employee salary record with fixed pay and miscellaneous."""
+
+    __tablename__ = "salary_records"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(sa_column=Column(String(120), nullable=False))
+    fixed_salary: float = Field(nullable=False, ge=0)
+    miscellaneous: float = Field(default=0, nullable=False, ge=0)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+
+class SalaryAdvance(SQLModel, table=True):
+    """An advance payment against a salary record."""
+
+    __tablename__ = "salary_advances"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    salary_id: int = Field(foreign_key="salary_records.id", nullable=False, index=True)
+    amount: float = Field(nullable=False, ge=0)
+    advance_date: date = Field(nullable=False, index=True)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )

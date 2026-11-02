@@ -18,7 +18,6 @@ const EXPENSE_CATEGORIES = [
   "Rent",
   "Internet bill",
   "Water bill",
-  "Salary",
   "Packaging",
   "Purchase",
   "Misc"

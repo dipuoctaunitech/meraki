@@ -45,6 +45,17 @@ def test_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[Te
     app.dependency_overrides[get_session] = override_get_session
 
     with TestClient(app) as client:
+        login = client.post(
+            "/api/v1/auth/login",
+            json={
+                "username": fresh_settings.accounts_username,
+                "password": fresh_settings.accounts_password,
+            },
+        )
+        assert login.status_code == 200, login.text
+        client.headers.update(
+            {"Authorization": f"Bearer {login.json()['access_token']}"}
+        )
         yield client
 
     app.dependency_overrides.clear()

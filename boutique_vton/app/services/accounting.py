@@ -48,6 +48,49 @@ def search_customers_by_phone(
     return list(session.exec(statement).all())
 
 
+def search_person_names(
+    session: Session,
+    *,
+    query: str,
+    limit: int = 8,
+) -> list[str]:
+    cleaned = query.strip()
+    if len(cleaned) < 1:
+        return []
+
+    entry_names = list(
+        session.exec(
+            select(AccountingEntry.customer_name)
+            .where(col(AccountingEntry.customer_name).ilike(f"%{cleaned}%"))
+            .where(AccountingEntry.customer_name != "-")
+            .distinct()
+            .order_by(col(AccountingEntry.customer_name).asc())
+            .limit(limit * 2)
+        ).all()
+    )
+    customer_names = list(
+        session.exec(
+            select(Customer.name)
+            .where(col(Customer.name).ilike(f"%{cleaned}%"))
+            .distinct()
+            .order_by(col(Customer.name).asc())
+            .limit(limit * 2)
+        ).all()
+    )
+
+    seen: set[str] = set()
+    results: list[str] = []
+    for name in [*entry_names, *customer_names]:
+        key = name.strip().lower()
+        if not key or key == "-" or key in seen:
+            continue
+        seen.add(key)
+        results.append(name.strip())
+        if len(results) >= limit:
+            break
+    return results
+
+
 def upsert_customer(session: Session, name: str, phone: str) -> Customer:
     from datetime import datetime, timezone
 
@@ -194,6 +237,7 @@ def _apply_filters(
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
     phone: Optional[str] = None,
+    name: Optional[str] = None,
 ):
     if entry_type is not None:
         statement = statement.where(AccountingEntry.entry_type == entry_type)
@@ -206,6 +250,12 @@ def _apply_filters(
     if phone:
         digits = "".join(ch for ch in phone if ch.isdigit())
         statement = statement.where(AccountingEntry.phone == digits)
+    if name:
+        cleaned = name.strip()
+        if cleaned:
+            statement = statement.where(
+                col(AccountingEntry.customer_name).ilike(f"%{cleaned}%")
+            )
     return statement
 
 
@@ -217,6 +267,7 @@ def list_entries(
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
     phone: Optional[str] = None,
+    name: Optional[str] = None,
     sort_order: str = "desc",
     limit: int = 100,
     offset: int = 0,
@@ -229,6 +280,7 @@ def list_entries(
         date_from=date_from,
         date_to=date_to,
         phone=phone,
+        name=name,
     )
     ascending = sort_order == "asc"
     date_order = (
@@ -250,6 +302,7 @@ def get_summary(
     is_paid: Optional[bool] = None,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
+    name: Optional[str] = None,
 ) -> AccountingSummary:
     statement = select(AccountingEntry)
     statement = _apply_filters(
@@ -258,6 +311,7 @@ def get_summary(
         is_paid=is_paid,
         date_from=date_from,
         date_to=date_to,
+        name=name,
     )
     entries = list(session.exec(statement).all())
 
@@ -282,6 +336,7 @@ def build_excel_report(
     is_paid: Optional[bool] = None,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
+    name: Optional[str] = None,
     sort_order: str = "desc",
 ) -> bytes:
     entries = list_entries(
@@ -290,6 +345,7 @@ def build_excel_report(
         is_paid=is_paid,
         date_from=date_from,
         date_to=date_to,
+        name=name,
         sort_order=sort_order,
         limit=10_000,
         offset=0,
@@ -345,6 +401,7 @@ def build_excel_report(
         is_paid=is_paid,
         date_from=date_from,
         date_to=date_to,
+        name=name,
     )
     sheet.append([])
     sheet.append(["Summary"])

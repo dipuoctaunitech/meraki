@@ -33,6 +33,22 @@ class Settings(BaseSettings):
         default="http://127.0.0.1:8000",
         validation_alias="BACKEND_PUBLIC_URL",
     )
+    accounts_username: str = Field(
+        default="admin",
+        validation_alias="ACCOUNTS_USERNAME",
+    )
+    accounts_password: str = Field(
+        default="meraki123",
+        validation_alias="ACCOUNTS_PASSWORD",
+    )
+    accounts_auth_secret: str = Field(
+        default="meraki-accounts-change-me",
+        validation_alias="ACCOUNTS_AUTH_SECRET",
+    )
+    accounts_token_ttl_hours: int = Field(
+        default=12,
+        validation_alias="ACCOUNTS_TOKEN_TTL_HOURS",
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",

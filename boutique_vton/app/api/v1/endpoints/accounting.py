@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 from sqlmodel import Session
 
+from app.core.auth import require_accounts_user
 from app.db.session import get_session
 from app.models.accounting import EntryType
 from app.schemas.accounting import (
@@ -18,7 +19,11 @@ from app.schemas.accounting import (
 )
 from app.services import accounting as accounting_service
 
-router = APIRouter(prefix="/accounting", tags=["accounting"])
+router = APIRouter(
+    prefix="/accounting",
+    tags=["accounting"],
+    dependencies=[Depends(require_accounts_user)],
+)
 
 SortOrder = Literal["asc", "desc"]
 
@@ -89,6 +94,7 @@ def list_accounting_entries(
     date_from: Optional[date] = Query(default=None),
     date_to: Optional[date] = Query(default=None),
     phone: Optional[str] = Query(default=None),
+    name: Optional[str] = Query(default=None),
     sort_order: SortOrder = Query(default="desc"),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
@@ -102,6 +108,7 @@ def list_accounting_entries(
         date_from=date_from,
         date_to=date_to,
         phone=phone,
+        name=name,
         sort_order=sort_order,
         limit=limit,
         offset=offset,
@@ -115,6 +122,7 @@ def get_accounting_summary(
     is_paid: Optional[bool] = Query(default=None),
     date_from: Optional[date] = Query(default=None),
     date_to: Optional[date] = Query(default=None),
+    name: Optional[str] = Query(default=None),
     session: Session = Depends(get_session),
 ) -> AccountingSummary:
     _validate_date_range(date_from, date_to)
@@ -124,6 +132,7 @@ def get_accounting_summary(
         is_paid=is_paid,
         date_from=date_from,
         date_to=date_to,
+        name=name,
     )
 
 
@@ -155,6 +164,15 @@ def search_customers(
     return [CustomerRead.model_validate(customer) for customer in customers]
 
 
+@router.get("/names", response_model=list[str])
+def search_person_names(
+    q: str = Query(default=""),
+    limit: int = Query(default=8, ge=1, le=50),
+    session: Session = Depends(get_session),
+) -> list[str]:
+    return accounting_service.search_person_names(session, query=q, limit=limit)
+
+
 @router.get("/items", response_model=list[CatalogItemRead])
 def search_catalog_items(
     q: str = Query(default=""),
@@ -171,6 +189,7 @@ def export_accounting_report(
     is_paid: Optional[bool] = Query(default=None),
     date_from: Optional[date] = Query(default=None),
     date_to: Optional[date] = Query(default=None),
+    name: Optional[str] = Query(default=None),
     sort_order: SortOrder = Query(default="desc"),
     session: Session = Depends(get_session),
 ) -> Response:
@@ -182,10 +201,16 @@ def export_accounting_report(
         is_paid=is_paid,
         date_from=date_from,
         date_to=date_to,
+        name=name,
         sort_order=sort_order,
     )
     filename = "accounting-report.xlsx"
-    if date_from or date_to:
+    if name and name.strip():
+        safe = "".join(
+            ch if ch.isalnum() or ch in "-_" else "-" for ch in name.strip()
+        )
+        filename = f"accounting-report-{safe[:40] or 'filtered'}.xlsx"
+    elif date_from or date_to:
         start = date_from.isoformat() if date_from else "start"
         end = date_to.isoformat() if date_to else "end"
         filename = f"accounting-report-{start}-to-{end}.xlsx"
