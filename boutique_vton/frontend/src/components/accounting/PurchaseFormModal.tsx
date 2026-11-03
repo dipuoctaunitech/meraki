@@ -192,8 +192,8 @@ export function PurchaseFormModal({
     setError(null);
 
     const digits = phone.replace(/\D/g, "");
-    if (digits.length < 10) {
-      setError("Enter a valid phone number (at least 10 digits).");
+    if (digits.length > 0 && (digits.length < 10 || digits.length > 15)) {
+      setError("Phone number must be 10 to 15 digits, or leave it blank.");
       return;
     }
     if (!customerName.trim()) {
@@ -302,11 +302,13 @@ export function PurchaseFormModal({
             <div ref={phoneFieldRef} className="relative block text-sm">
               <label className="block">
                 <span className="mb-1.5 block text-neutral-600">
-                  Phone number
+                  Phone number{" "}
+                  <span className="normal-case tracking-normal text-neutral-400">
+                    (optional)
+                  </span>
                 </span>
                 <input
                   type="tel"
-                  required
                   autoComplete="off"
                   value={phone}
                   onChange={(e) => {
@@ -318,7 +320,7 @@ export function PurchaseFormModal({
                       setShowPhoneSuggestions(true);
                     }
                   }}
-                  placeholder="10+ digits"
+                  placeholder="Type to find existing customer"
                   className="w-full rounded-xl border border-sand/60 bg-white px-3 py-2.5 text-ink outline-none focus:border-ink"
                 />
               </label>

@@ -93,10 +93,23 @@ class TestAccountingEntries:
         assert data["customer_name"] == "KSEB"
         assert data["customer_id"] is None
 
-    def test_credit_requires_phone(self, test_client: TestClient) -> None:
+    def test_credit_allows_missing_phone(self, test_client: TestClient) -> None:
         response = test_client.post(
             "/api/v1/accounting/entries",
             json=_credit_payload(phone=None),
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["phone"] == ""
+        assert data["customer_name"] == "Asha Kumar"
+        assert data["customer_id"] is None
+
+    def test_credit_rejects_invalid_phone_when_provided(
+        self, test_client: TestClient
+    ) -> None:
+        response = test_client.post(
+            "/api/v1/accounting/entries",
+            json=_credit_payload(phone="123"),
         )
         assert response.status_code == 422
 

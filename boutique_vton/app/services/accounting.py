@@ -154,8 +154,9 @@ def create_entry(session: Session, payload: AccountingEntryCreate) -> Accounting
     phone = payload.phone or ""
 
     if payload.entry_type == EntryType.CREDIT:
-        customer = upsert_customer(session, customer_name, phone)
-        customer_id = customer.id
+        if phone:
+            customer = upsert_customer(session, customer_name, phone)
+            customer_id = customer.id
         upsert_catalog_item(session, payload.item_name, payload.item_price)
 
     total = round(payload.item_price * payload.quantity, 2)
@@ -206,8 +207,9 @@ def update_entry(
     phone = payload.phone or ""
 
     if payload.entry_type == EntryType.CREDIT:
-        customer = upsert_customer(session, customer_name, phone)
-        customer_id = customer.id
+        if phone:
+            customer = upsert_customer(session, customer_name, phone)
+            customer_id = customer.id
         upsert_catalog_item(session, payload.item_name, payload.item_price)
 
     entry.entry_type = payload.entry_type

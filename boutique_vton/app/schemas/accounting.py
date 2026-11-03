@@ -61,9 +61,10 @@ class AccountingEntryCreate(BaseModel):
         if self.entry_type == EntryType.CREDIT:
             if not self.customer_name:
                 raise ValueError("customer_name is required for credit entries")
-            if not self.phone:
-                raise ValueError("phone is required for credit entries")
-            self.phone = _normalize_phone(self.phone)
+            if self.phone and self.phone.strip():
+                self.phone = _normalize_phone(self.phone)
+            else:
+                self.phone = ""
         else:
             # Debit/expense: no customer phone; quantity is always 1
             self.phone = ""
