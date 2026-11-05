@@ -90,6 +90,7 @@ class AccountingEntryRead(BaseModel):
     total: float
     is_paid: bool
     payment_method: Optional[PaymentMethod]
+    invoice_number: Optional[str] = None
     notes: Optional[str]
     created_at: datetime
 

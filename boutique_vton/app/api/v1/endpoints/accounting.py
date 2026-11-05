@@ -9,7 +9,7 @@ from sqlmodel import Session
 
 from app.core.auth import require_accounts_user
 from app.db.session import get_session
-from app.models.accounting import EntryType
+from app.models.accounting import EntryType, PaymentMethod
 from app.schemas.accounting import (
     AccountingEntryCreate,
     AccountingEntryRead,
@@ -91,6 +91,7 @@ def delete_accounting_entry(
 def list_accounting_entries(
     entry_type: Optional[EntryType] = Query(default=None),
     is_paid: Optional[bool] = Query(default=None),
+    payment_method: Optional[PaymentMethod] = Query(default=None),
     date_from: Optional[date] = Query(default=None),
     date_to: Optional[date] = Query(default=None),
     phone: Optional[str] = Query(default=None),
@@ -105,6 +106,7 @@ def list_accounting_entries(
         session,
         entry_type=entry_type,
         is_paid=is_paid,
+        payment_method=payment_method,
         date_from=date_from,
         date_to=date_to,
         phone=phone,
@@ -120,6 +122,7 @@ def list_accounting_entries(
 def get_accounting_summary(
     entry_type: Optional[EntryType] = Query(default=None),
     is_paid: Optional[bool] = Query(default=None),
+    payment_method: Optional[PaymentMethod] = Query(default=None),
     date_from: Optional[date] = Query(default=None),
     date_to: Optional[date] = Query(default=None),
     name: Optional[str] = Query(default=None),
@@ -130,6 +133,7 @@ def get_accounting_summary(
         session,
         entry_type=entry_type,
         is_paid=is_paid,
+        payment_method=payment_method,
         date_from=date_from,
         date_to=date_to,
         name=name,
@@ -173,6 +177,18 @@ def search_person_names(
     return accounting_service.search_person_names(session, query=q, limit=limit)
 
 
+@router.get("/invoices/next")
+def get_next_invoice_number(
+    entry_date: date = Query(...),
+    session: Session = Depends(get_session),
+) -> dict[str, str]:
+    return {
+        "invoice_number": accounting_service.next_invoice_number(
+            session, entry_date
+        )
+    }
+
+
 @router.get("/items", response_model=list[CatalogItemRead])
 def search_catalog_items(
     q: str = Query(default=""),
@@ -187,6 +203,7 @@ def search_catalog_items(
 def export_accounting_report(
     entry_type: Optional[EntryType] = Query(default=None),
     is_paid: Optional[bool] = Query(default=None),
+    payment_method: Optional[PaymentMethod] = Query(default=None),
     date_from: Optional[date] = Query(default=None),
     date_to: Optional[date] = Query(default=None),
     name: Optional[str] = Query(default=None),
@@ -199,6 +216,7 @@ def export_accounting_report(
         session,
         entry_type=entry_type,
         is_paid=is_paid,
+        payment_method=payment_method,
         date_from=date_from,
         date_to=date_to,
         name=name,

@@ -76,6 +76,10 @@ class AccountingEntry(SQLModel, table=True):
     total: float = Field(nullable=False, ge=0)
     is_paid: bool = Field(default=False, nullable=False, index=True)
     payment_method: Optional[PaymentMethod] = Field(default=None)
+    invoice_number: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String(20), nullable=True, index=True, unique=True),
+    )
     notes: Optional[str] = Field(default=None, sa_column=Column(String(500), nullable=True))
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),

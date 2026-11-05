@@ -25,6 +25,79 @@ PAYMENT_LABELS: dict[PaymentMethod, str] = {
 }
 
 
+def invoice_month_prefix(entry_date: date) -> str:
+    """Return YYMM prefix, e.g. Nov 2026 → 2611."""
+    return f"{entry_date.year % 100:02d}{entry_date.month:02d}"
+
+
+def format_invoice_number(entry_date: date, sequence: int) -> str:
+    """Build invoice like 2611001 (min 3-digit sequence)."""
+    return f"{invoice_month_prefix(entry_date)}{sequence:03d}"
+
+
+def _max_invoice_sequence(session: Session, prefix: str) -> int:
+    rows = session.exec(
+        select(AccountingEntry.invoice_number).where(
+            AccountingEntry.entry_type == EntryType.CREDIT,
+            col(AccountingEntry.invoice_number).like(f"{prefix}%"),
+        )
+    ).all()
+    max_seq = 0
+    for invoice in rows:
+        if not invoice or not invoice.startswith(prefix):
+            continue
+        suffix = invoice[len(prefix) :]
+        if suffix.isdigit():
+            max_seq = max(max_seq, int(suffix))
+    return max_seq
+
+
+def next_invoice_number(session: Session, entry_date: date) -> str:
+    prefix = invoice_month_prefix(entry_date)
+    return format_invoice_number(entry_date, _max_invoice_sequence(session, prefix) + 1)
+
+
+def backfill_invoice_numbers(session: Session) -> int:
+    """Assign invoice numbers to existing credit entries missing one.
+
+    Oldest first within each month (by entry_date, then id).
+    """
+    entries = list(
+        session.exec(
+            select(AccountingEntry)
+            .where(AccountingEntry.entry_type == EntryType.CREDIT)
+            .where(
+                (AccountingEntry.invoice_number == None)  # noqa: E711
+                | (AccountingEntry.invoice_number == "")
+            )
+            .order_by(
+                col(AccountingEntry.entry_date).asc(),
+                col(AccountingEntry.id).asc(),
+            )
+        ).all()
+    )
+    if not entries:
+        return 0
+
+    updated = 0
+    # Track highest assigned seq per prefix during this backfill pass
+    seq_by_prefix: dict[str, int] = {}
+    for entry in entries:
+        prefix = invoice_month_prefix(entry.entry_date)
+        if prefix not in seq_by_prefix:
+            seq_by_prefix[prefix] = _max_invoice_sequence(session, prefix)
+        seq_by_prefix[prefix] += 1
+        entry.invoice_number = format_invoice_number(
+            entry.entry_date, seq_by_prefix[prefix]
+        )
+        session.add(entry)
+        updated += 1
+
+    if updated:
+        session.commit()
+    return updated
+
+
 def get_customer_by_phone(session: Session, phone: str) -> Optional[Customer]:
     digits = "".join(ch for ch in phone if ch.isdigit())
     return session.exec(select(Customer).where(Customer.phone == digits)).first()
@@ -153,11 +226,13 @@ def create_entry(session: Session, payload: AccountingEntryCreate) -> Accounting
     customer_name = payload.customer_name or "-"
     phone = payload.phone or ""
 
+    invoice_number: Optional[str] = None
     if payload.entry_type == EntryType.CREDIT:
         if phone:
             customer = upsert_customer(session, customer_name, phone)
             customer_id = customer.id
         upsert_catalog_item(session, payload.item_name, payload.item_price)
+        invoice_number = next_invoice_number(session, payload.entry_date)
 
     total = round(payload.item_price * payload.quantity, 2)
     entry = AccountingEntry(
@@ -172,6 +247,7 @@ def create_entry(session: Session, payload: AccountingEntryCreate) -> Accounting
         total=total,
         is_paid=payload.is_paid,
         payment_method=payload.payment_method,
+        invoice_number=invoice_number,
         notes=payload.notes,
     )
     session.add(entry)
@@ -211,6 +287,10 @@ def update_entry(
             customer = upsert_customer(session, customer_name, phone)
             customer_id = customer.id
         upsert_catalog_item(session, payload.item_name, payload.item_price)
+        if not entry.invoice_number:
+            entry.invoice_number = next_invoice_number(session, payload.entry_date)
+    else:
+        entry.invoice_number = None
 
     entry.entry_type = payload.entry_type
     entry.entry_date = payload.entry_date
@@ -236,6 +316,7 @@ def _apply_filters(
     *,
     entry_type: Optional[EntryType] = None,
     is_paid: Optional[bool] = None,
+    payment_method: Optional[PaymentMethod] = None,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
     phone: Optional[str] = None,
@@ -245,6 +326,8 @@ def _apply_filters(
         statement = statement.where(AccountingEntry.entry_type == entry_type)
     if is_paid is not None:
         statement = statement.where(AccountingEntry.is_paid == is_paid)
+    if payment_method is not None:
+        statement = statement.where(AccountingEntry.payment_method == payment_method)
     if date_from is not None:
         statement = statement.where(AccountingEntry.entry_date >= date_from)
     if date_to is not None:
@@ -266,6 +349,7 @@ def list_entries(
     *,
     entry_type: Optional[EntryType] = None,
     is_paid: Optional[bool] = None,
+    payment_method: Optional[PaymentMethod] = None,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
     phone: Optional[str] = None,
@@ -279,6 +363,7 @@ def list_entries(
         statement,
         entry_type=entry_type,
         is_paid=is_paid,
+        payment_method=payment_method,
         date_from=date_from,
         date_to=date_to,
         phone=phone,
@@ -302,6 +387,7 @@ def get_summary(
     *,
     entry_type: Optional[EntryType] = None,
     is_paid: Optional[bool] = None,
+    payment_method: Optional[PaymentMethod] = None,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
     name: Optional[str] = None,
@@ -311,16 +397,40 @@ def get_summary(
         statement,
         entry_type=entry_type,
         is_paid=is_paid,
+        payment_method=payment_method,
         date_from=date_from,
         date_to=date_to,
         name=name,
     )
     entries = list(session.exec(statement).all())
 
-    credit_total = sum(e.total for e in entries if e.entry_type == EntryType.CREDIT)
-    debit_total = sum(e.total for e in entries if e.entry_type == EntryType.DEBIT)
-    paid_total = sum(e.total for e in entries if e.is_paid)
-    unpaid_total = sum(e.total for e in entries if not e.is_paid)
+    # Debit total can come from the filtered set.
+    debit_total = sum(
+        e.total for e in entries if e.entry_type == EntryType.DEBIT
+    )
+
+    # Purchased / received / outstanding are ALWAYS credit-only.
+    # Re-query credits with the same filters (except entry_type) so All-tab
+    # paid debit spend never leaks into total received / outstanding.
+    credit_statement = select(AccountingEntry)
+    credit_statement = _apply_filters(
+        credit_statement,
+        entry_type=EntryType.CREDIT,
+        is_paid=is_paid,
+        payment_method=payment_method,
+        date_from=date_from,
+        date_to=date_to,
+        name=name,
+    )
+    # If the caller already scoped to debit only, credit tiles are zero.
+    if entry_type == EntryType.DEBIT:
+        credit_entries: list[AccountingEntry] = []
+    else:
+        credit_entries = list(session.exec(credit_statement).all())
+
+    credit_total = sum(e.total for e in credit_entries)
+    paid_total = sum(e.total for e in credit_entries if e.is_paid)
+    unpaid_total = sum(e.total for e in credit_entries if not e.is_paid)
 
     return AccountingSummary(
         credit_total=round(credit_total, 2),
@@ -336,6 +446,7 @@ def build_excel_report(
     *,
     entry_type: Optional[EntryType] = None,
     is_paid: Optional[bool] = None,
+    payment_method: Optional[PaymentMethod] = None,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
     name: Optional[str] = None,
@@ -345,6 +456,7 @@ def build_excel_report(
         session,
         entry_type=entry_type,
         is_paid=is_paid,
+        payment_method=payment_method,
         date_from=date_from,
         date_to=date_to,
         name=name,
@@ -358,6 +470,7 @@ def build_excel_report(
     sheet.title = "Accounting Report"
 
     headers = [
+        "Invoice",
         "Date",
         "Type",
         "Customer Name",
@@ -383,6 +496,7 @@ def build_excel_report(
         )
         sheet.append(
             [
+                entry.invoice_number or "",
                 entry.entry_date.isoformat(),
                 entry.entry_type.value.capitalize(),
                 entry.customer_name,
@@ -407,13 +521,13 @@ def build_excel_report(
     )
     sheet.append([])
     sheet.append(["Summary"])
-    sheet.append(["Credit Total", summary.credit_total])
+    sheet.append(["Total Purchased", summary.credit_total])
+    sheet.append(["Total Received", summary.paid_total])
+    sheet.append(["Total Outstanding", summary.unpaid_total])
     sheet.append(["Debit Total", summary.debit_total])
-    sheet.append(["Paid Total", summary.paid_total])
-    sheet.append(["Unpaid Total", summary.unpaid_total])
     sheet.append(["Entry Count", summary.entry_count])
 
-    widths = [12, 10, 22, 14, 24, 10, 10, 12, 8, 22, 30]
+    widths = [12, 12, 10, 22, 14, 24, 10, 10, 12, 8, 22, 30]
     for index, width in enumerate(widths, start=1):
         sheet.column_dimensions[chr(64 + index)].width = width
 

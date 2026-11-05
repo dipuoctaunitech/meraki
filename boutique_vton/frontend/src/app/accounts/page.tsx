@@ -4,12 +4,15 @@ import { useCallback, useEffect, useState } from "react";
 import {
   ArrowDownUp,
   CalendarRange,
+  ChevronDown,
+  CreditCard,
   Download,
   LogOut,
   Pencil,
   Plus,
   RefreshCw,
   Trash2,
+  Wallet,
   X
 } from "lucide-react";
 import { DateInput } from "@/components/accounting/DateInput";
@@ -19,6 +22,7 @@ import { PurchaseFormModal } from "@/components/accounting/PurchaseFormModal";
 import { SalaryPanel } from "@/components/accounting/SalaryPanel";
 import { Button } from "@/components/ui/Button";
 import {
+  PAYMENT_OPTIONS,
   deleteAccountingEntry,
   downloadAccountingReport,
   formatCurrency,
@@ -29,6 +33,7 @@ import {
   type AccountingEntry,
   type AccountingSummary,
   type EntryType,
+  type PaymentMethod,
   type ReportFilters,
   type SortOrder
 } from "@/lib/accounting";
@@ -57,7 +62,11 @@ export default function AccountsPage() {
   const [searchName, setSearchName] = useState("");
   const [debouncedSearchName, setDebouncedSearchName] = useState("");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+  const [paidFilter, setPaidFilter] = useState<"" | "true" | "false">("");
+  const [methodFilter, setMethodFilter] = useState<PaymentMethod | "">("");
   const [showDateFilter, setShowDateFilter] = useState(false);
+  const [showPaymentFilter, setShowPaymentFilter] = useState(false);
+  const [showMethodFilter, setShowMethodFilter] = useState(false);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -103,8 +112,18 @@ export default function AccountsPage() {
     if (dateFrom) filters.date_from = dateFrom;
     if (dateTo) filters.date_to = dateTo;
     if (debouncedSearchName) filters.name = debouncedSearchName;
+    if (paidFilter) filters.is_paid = paidFilter;
+    if (methodFilter) filters.payment_method = methodFilter;
     return filters;
-  }, [tab, dateFrom, dateTo, sortOrder, debouncedSearchName]);
+  }, [
+    tab,
+    dateFrom,
+    dateTo,
+    sortOrder,
+    debouncedSearchName,
+    paidFilter,
+    methodFilter
+  ]);
 
   const loadData = useCallback(async () => {
     if (!authenticated || view !== "ledger") return;
@@ -168,13 +187,29 @@ export default function AccountsPage() {
     setDebouncedSearchName("");
   }
 
+  function clearLedgerFilters() {
+    setDateFrom("");
+    setDateTo("");
+    setPaidFilter("");
+    setMethodFilter("");
+    setShowDateFilter(false);
+    setShowPaymentFilter(false);
+    setShowMethodFilter(false);
+  }
+
   function switchLedgerTab(next: "all" | EntryType) {
-    if (next !== tab) clearSearch();
+    if (next !== tab) {
+      clearSearch();
+      clearLedgerFilters();
+    }
     setTab(next);
   }
 
   function switchView(next: "ledger" | "salary") {
-    if (next !== view) clearSearch();
+    if (next !== view) {
+      clearSearch();
+      clearLedgerFilters();
+    }
     setView(next);
   }
 
@@ -185,6 +220,7 @@ export default function AccountsPage() {
     setEntries([]);
     setSummary(null);
     clearSearch();
+    clearLedgerFilters();
   }
 
   async function handleDownload() {
@@ -203,11 +239,6 @@ export default function AccountsPage() {
     } finally {
       setDownloading(false);
     }
-  }
-
-  function clearDateFilter() {
-    setDateFrom("");
-    setDateTo("");
   }
 
   function handleEdit(entry: AccountingEntry) {
@@ -250,6 +281,10 @@ export default function AccountsPage() {
   }
 
   const hasDateFilter = Boolean(dateFrom || dateTo);
+  const hasPaidFilter = paidFilter !== "";
+  const hasMethodFilter = methodFilter !== "";
+  const showFilterRow =
+    showDateFilter || showPaymentFilter || showMethodFilter;
 
   if (!authChecked) {
     return (
@@ -405,15 +440,6 @@ export default function AccountsPage() {
           />
         ) : null}
 
-        {view === "ledger" && summary ? (
-          <div className="mt-6 grid grid-cols-2 gap-3 sm:mt-8 sm:gap-4 lg:mt-10 lg:grid-cols-4">
-            <SummaryTile label="Credit total" value={summary.credit_total} />
-            <SummaryTile label="Debit total" value={summary.debit_total} />
-            <SummaryTile label="Paid" value={summary.paid_total} />
-            <SummaryTile label="Not paid" value={summary.unpaid_total} />
-          </div>
-        ) : null}
-
         {view === "ledger" ? (
         <div className="mt-6 flex gap-2 overflow-x-auto border-b border-sand/60 pb-3 scrollbar-none sm:mt-8 md:mt-10 md:flex-wrap">
           {(
@@ -439,13 +465,17 @@ export default function AccountsPage() {
         </div>
         ) : null}
 
+        {view === "ledger" && summary ? (
+          <LedgerSummary summary={summary} tab={tab} />
+        ) : null}
+
         {view === "ledger" ? (
         <>
         <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-sand/50 bg-white/60 p-3 sm:p-4">
           <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center">
             <button
               type="button"
-              onClick={() => setShowDateFilter((prev) => !prev)}
+              onClick={() => setShowDateFilter(true)}
               className={`inline-flex w-full items-center justify-center gap-2 rounded-full border border-ink px-4 py-2.5 text-sm transition sm:w-auto sm:justify-start ${
                 showDateFilter || hasDateFilter
                   ? "bg-ink text-white"
@@ -455,6 +485,42 @@ export default function AccountsPage() {
               <CalendarRange className="h-4 w-4" />
               Date filter
               {hasDateFilter ? (
+                <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs">
+                  On
+                </span>
+              ) : null}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowPaymentFilter(true)}
+              className={`inline-flex w-full items-center justify-center gap-2 rounded-full border border-ink px-4 py-2.5 text-sm transition sm:w-auto sm:justify-start ${
+                showPaymentFilter || hasPaidFilter
+                  ? "bg-ink text-white"
+                  : "bg-transparent text-ink hover:bg-ink hover:text-white active:bg-ink active:text-white"
+              }`}
+            >
+              <Wallet className="h-4 w-4" />
+              Payment
+              {hasPaidFilter ? (
+                <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs">
+                  On
+                </span>
+              ) : null}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowMethodFilter(true)}
+              className={`inline-flex w-full items-center justify-center gap-2 rounded-full border border-ink px-4 py-2.5 text-sm transition sm:w-auto sm:justify-start ${
+                showMethodFilter || hasMethodFilter
+                  ? "bg-ink text-white"
+                  : "bg-transparent text-ink hover:bg-ink hover:text-white active:bg-ink active:text-white"
+              }`}
+            >
+              <CreditCard className="h-4 w-4" />
+              Method
+              {hasMethodFilter ? (
                 <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs">
                   On
                 </span>
@@ -490,38 +556,74 @@ export default function AccountsPage() {
             />
           </div>
 
-          {showDateFilter ? (
-            <div className="grid gap-3 border-t border-sand/40 pt-3 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-end">
-              <label className="block min-w-0 text-sm sm:flex-1 lg:max-w-[12rem]">
-                <span className="mb-1.5 block text-neutral-600">From</span>
-                <DateInput
-                  value={dateFrom}
-                  onChange={setDateFrom}
-                  className="w-full cursor-pointer rounded-xl border border-sand/60 bg-white px-3 py-2.5 text-ink outline-none focus:border-ink"
-                />
-              </label>
-              <label className="block min-w-0 text-sm sm:flex-1 lg:max-w-[12rem]">
-                <span className="mb-1.5 block text-neutral-600">To</span>
-                <DateInput
-                  value={dateTo}
-                  onChange={setDateTo}
-                  className="w-full cursor-pointer rounded-xl border border-sand/60 bg-white px-3 py-2.5 text-ink outline-none focus:border-ink"
-                />
-              </label>
-              {hasDateFilter ? (
-                <button
-                  type="button"
-                  onClick={clearDateFilter}
-                  className="inline-flex items-center justify-center gap-1 rounded-full px-3 py-2.5 text-sm text-neutral-600 transition hover:text-ink sm:justify-start"
-                >
-                  <X className="h-4 w-4" />
-                  Clear dates
-                </button>
+          {showFilterRow ? (
+            <div className="flex flex-wrap items-end gap-3 border-t border-sand/40 pt-3">
+              {showDateFilter ? (
+                <>
+                  <label className="block min-w-[10rem] flex-1 text-sm sm:max-w-[12rem]">
+                    <span className="mb-1.5 block text-neutral-600">From</span>
+                    <DateInput
+                      value={dateFrom}
+                      onChange={setDateFrom}
+                      className="w-full cursor-pointer rounded-xl border border-sand/60 bg-white px-3 py-2.5 text-ink outline-none focus:border-ink"
+                    />
+                  </label>
+                  <label className="block min-w-[10rem] flex-1 text-sm sm:max-w-[12rem]">
+                    <span className="mb-1.5 block text-neutral-600">To</span>
+                    <DateInput
+                      value={dateTo}
+                      onChange={setDateTo}
+                      className="w-full cursor-pointer rounded-xl border border-sand/60 bg-white px-3 py-2.5 text-ink outline-none focus:border-ink"
+                    />
+                  </label>
+                </>
               ) : null}
-              <p className="text-xs text-neutral-500 sm:col-span-2 lg:flex-1">
-                Applies to the current {tab === "all" ? "All" : tab} tab,
-                including name search. Download uses the same filters.
-              </p>
+
+              {showPaymentFilter ? (
+                <label className="block min-w-[10rem] flex-1 text-sm sm:max-w-[12rem]">
+                  <span className="mb-1.5 block text-neutral-600">Payment</span>
+                  <select
+                    value={paidFilter}
+                    onChange={(e) =>
+                      setPaidFilter(e.target.value as "" | "true" | "false")
+                    }
+                    className="w-full rounded-xl border border-sand/60 bg-white px-3 py-2.5 text-ink outline-none focus:border-ink"
+                  >
+                    <option value="">All</option>
+                    <option value="true">Paid</option>
+                    <option value="false">Not paid</option>
+                  </select>
+                </label>
+              ) : null}
+
+              {showMethodFilter ? (
+                <label className="block min-w-[10rem] flex-1 text-sm sm:max-w-[14rem]">
+                  <span className="mb-1.5 block text-neutral-600">Method</span>
+                  <select
+                    value={methodFilter}
+                    onChange={(e) =>
+                      setMethodFilter(e.target.value as PaymentMethod | "")
+                    }
+                    className="w-full rounded-xl border border-sand/60 bg-white px-3 py-2.5 text-ink outline-none focus:border-ink"
+                  >
+                    <option value="">All methods</option>
+                    {PAYMENT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+
+              <button
+                type="button"
+                onClick={clearLedgerFilters}
+                className="inline-flex items-center justify-center gap-1 rounded-full px-3 py-2.5 text-sm text-neutral-600 transition hover:text-ink"
+              >
+                <X className="h-4 w-4" />
+                Clear filters
+              </button>
             </div>
           ) : null}
         </div>
@@ -561,6 +663,7 @@ export default function AccountsPage() {
           <table className="min-w-full text-left text-sm">
             <thead className="border-b border-sand/50 text-xs uppercase tracking-wider text-neutral-500">
               <tr>
+                <th className="px-4 py-3 font-medium">Invoice</th>
                 <th className="px-4 py-3 font-medium">Date</th>
                 <th className="px-4 py-3 font-medium">Type</th>
                 <th className="px-4 py-3 font-medium">Name / Paid to</th>
@@ -568,8 +671,34 @@ export default function AccountsPage() {
                 <th className="px-4 py-3 font-medium">Item / Expense</th>
                 <th className="px-4 py-3 font-medium">Qty</th>
                 <th className="px-4 py-3 font-medium">Total</th>
-                <th className="px-4 py-3 font-medium">Paid</th>
-                <th className="px-4 py-3 font-medium">Method</th>
+                <th className="px-4 py-3 font-medium">
+                  <button
+                    type="button"
+                    onClick={() => setShowPaymentFilter(true)}
+                    className={`inline-flex items-center gap-1 uppercase tracking-wider transition hover:text-ink ${
+                      showPaymentFilter || hasPaidFilter
+                        ? "text-ink"
+                        : "text-neutral-500"
+                    }`}
+                  >
+                    Payment
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </button>
+                </th>
+                <th className="px-4 py-3 font-medium">
+                  <button
+                    type="button"
+                    onClick={() => setShowMethodFilter(true)}
+                    className={`inline-flex items-center gap-1 uppercase tracking-wider transition hover:text-ink ${
+                      showMethodFilter || hasMethodFilter
+                        ? "text-ink"
+                        : "text-neutral-500"
+                    }`}
+                  >
+                    Method
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </button>
+                </th>
                 <th className="px-4 py-3 font-medium"> </th>
               </tr>
             </thead>
@@ -577,7 +706,7 @@ export default function AccountsPage() {
               {loading ? (
                 <tr>
                   <td
-                    colSpan={10}
+                    colSpan={11}
                     className="px-4 py-10 text-center text-neutral-500"
                   >
                     Loading entries…
@@ -586,7 +715,7 @@ export default function AccountsPage() {
               ) : entries.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={10}
+                    colSpan={11}
                     className="px-4 py-10 text-center text-neutral-500"
                   >
                     No entries for this view. Adjust filters or add a sale /
@@ -599,6 +728,9 @@ export default function AccountsPage() {
                     key={entry.id}
                     className="border-b border-sand/30 last:border-0"
                   >
+                    <td className="whitespace-nowrap px-4 py-3">
+                      {entry.invoice_number || "—"}
+                    </td>
                     <td className="whitespace-nowrap px-4 py-3">
                       {entry.entry_date}
                     </td>
@@ -688,6 +820,7 @@ function EntryCard({
         <div className="min-w-0">
           <p className="truncate font-medium text-ink">{entry.item_name}</p>
           <p className="mt-1 text-xs text-neutral-500">
+            {entry.invoice_number ? `${entry.invoice_number} · ` : ""}
             {entry.entry_date} ·{" "}
             <span className="capitalize">{entry.entry_type}</span>
           </p>
@@ -697,6 +830,12 @@ function EntryCard({
         </p>
       </div>
       <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+        {entry.invoice_number ? (
+          <div>
+            <dt className="text-xs text-neutral-500">Invoice</dt>
+            <dd className="truncate text-ink">{entry.invoice_number}</dd>
+          </div>
+        ) : null}
         <div>
           <dt className="text-xs text-neutral-500">Name / Paid to</dt>
           <dd className="truncate text-ink">{entry.customer_name}</dd>
@@ -712,7 +851,7 @@ function EntryCard({
           </dd>
         </div>
         <div>
-          <dt className="text-xs text-neutral-500">Paid</dt>
+          <dt className="text-xs text-neutral-500">Payment</dt>
           <dd className="text-ink">
             {entry.is_paid ? "Paid" : "Not paid"}
             {entry.is_paid ? ` · ${paymentLabel(entry.payment_method)}` : ""}
@@ -751,6 +890,46 @@ function SummaryTile({ label, value }: { label: string; value: number }) {
       <p className="mt-1 text-base font-medium text-ink sm:mt-2 sm:text-xl">
         {formatCurrency(value)}
       </p>
+    </div>
+  );
+}
+
+function LedgerSummary({
+  summary,
+  tab
+}: {
+  summary: AccountingSummary;
+  tab: "all" | EntryType;
+}) {
+  if (tab === "credit") {
+    return (
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:mt-6 sm:grid-cols-3 sm:gap-4">
+        <SummaryTile label="Total purchased" value={summary.credit_total} />
+        <SummaryTile label="Total received" value={summary.paid_total} />
+        <SummaryTile label="Total outstanding" value={summary.unpaid_total} />
+      </div>
+    );
+  }
+
+  if (tab === "debit") {
+    return (
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:mt-6 sm:max-w-sm">
+        <SummaryTile label="Debit total" value={summary.debit_total} />
+      </div>
+    );
+  }
+
+  // All: purchased/received/outstanding in one column, debit beside purchased.
+  return (
+    <div className="mt-4 grid grid-cols-2 gap-3 sm:mt-6 sm:gap-4">
+      <div className="space-y-3">
+        <SummaryTile label="Total purchased" value={summary.credit_total} />
+        <SummaryTile label="Total received" value={summary.paid_total} />
+        <SummaryTile label="Total outstanding" value={summary.unpaid_total} />
+      </div>
+      <div>
+        <SummaryTile label="Debit total" value={summary.debit_total} />
+      </div>
     </div>
   );
 }

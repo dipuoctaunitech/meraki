@@ -45,6 +45,44 @@ class TestAccountingEntries:
         assert data["is_paid"] is True
         assert data["payment_method"] == "gpay"
         assert data["phone"] == "9876543210"
+        assert data["invoice_number"]
+
+    def test_invoice_numbers_increment_by_month(self, test_client: TestClient) -> None:
+        first = test_client.post(
+            "/api/v1/accounting/entries",
+            json=_credit_payload(entry_date="2026-11-02"),
+        )
+        second = test_client.post(
+            "/api/v1/accounting/entries",
+            json=_credit_payload(
+                entry_date="2026-11-15",
+                phone="9876543211",
+                customer_name="Bina",
+                item_name="Kurti 2",
+            ),
+        )
+        december = test_client.post(
+            "/api/v1/accounting/entries",
+            json=_credit_payload(
+                entry_date="2026-12-01",
+                phone="9876543212",
+                customer_name="Cira",
+                item_name="Kurti 3",
+            ),
+        )
+        assert first.status_code == 201
+        assert second.status_code == 201
+        assert december.status_code == 201
+        assert first.json()["invoice_number"] == "2611001"
+        assert second.json()["invoice_number"] == "2611002"
+        assert december.json()["invoice_number"] == "2612001"
+
+        preview = test_client.get(
+            "/api/v1/accounting/invoices/next",
+            params={"entry_date": "2026-11-20"},
+        )
+        assert preview.status_code == 200
+        assert preview.json()["invoice_number"] == "2611003"
 
     def test_phone_lookup_autofill_customer(self, test_client: TestClient) -> None:
         create = test_client.post("/api/v1/accounting/entries", json=_credit_payload())
@@ -287,6 +325,56 @@ class TestAccountingEntries:
         assert export.content[:2] == b"PK"
         assert "asha" in export.headers.get("content-disposition", "").lower()
 
+    def test_payment_and_method_filters(self, test_client: TestClient) -> None:
+        test_client.post(
+            "/api/v1/accounting/entries",
+            json=_credit_payload(is_paid=True, payment_method="cash"),
+        )
+        test_client.post(
+            "/api/v1/accounting/entries",
+            json=_credit_payload(
+                phone="9876543290",
+                customer_name="Unpaid Buyer",
+                is_paid=False,
+                payment_method=None,
+                item_name="Pending sale",
+            ),
+        )
+        test_client.post(
+            "/api/v1/accounting/entries",
+            json=_credit_payload(
+                phone="9876543291",
+                customer_name="UPI Buyer",
+                is_paid=True,
+                payment_method="gpay",
+                item_name="UPI sale",
+            ),
+        )
+
+        paid_only = test_client.get(
+            "/api/v1/accounting/entries",
+            params={"is_paid": "true"},
+        )
+        assert paid_only.status_code == 200
+        assert len(paid_only.json()) == 2
+        assert all(row["is_paid"] for row in paid_only.json())
+
+        unpaid_only = test_client.get(
+            "/api/v1/accounting/entries",
+            params={"is_paid": "false"},
+        )
+        assert unpaid_only.status_code == 200
+        assert len(unpaid_only.json()) == 1
+        assert unpaid_only.json()[0]["customer_name"] == "Unpaid Buyer"
+
+        cash_only = test_client.get(
+            "/api/v1/accounting/entries",
+            params={"payment_method": "cash"},
+        )
+        assert cash_only.status_code == 200
+        assert len(cash_only.json()) == 1
+        assert cash_only.json()[0]["payment_method"] == "cash"
+
     def test_date_filter_and_sort_order(self, test_client: TestClient) -> None:
         test_client.post(
             "/api/v1/accounting/entries",
@@ -331,24 +419,41 @@ class TestAccountingEntries:
         assert export.content[:2] == b"PK"
 
     def test_summary_and_excel_export(self, test_client: TestClient) -> None:
+        # Paid credit → received; unpaid credit → outstanding; paid debit stays out.
         test_client.post("/api/v1/accounting/entries", json=_credit_payload())
+        test_client.post(
+            "/api/v1/accounting/entries",
+            json=_credit_payload(
+                customer_name="Unpaid Buyer",
+                phone="9876543299",
+                item_name="Unpaid Saree",
+                item_price=1500,
+                quantity=1,
+                is_paid=False,
+                payment_method=None,
+            ),
+        )
         test_client.post(
             "/api/v1/accounting/entries",
             json=_debit_payload(
                 item_name="Rent",
-                item_price=500,
-                is_paid=False,
-                payment_method=None,
-                customer_name=None,
+                item_price=9000,
+                is_paid=True,
+                payment_method="cash",
+                customer_name="Landlord",
             ),
         )
 
         summary = test_client.get("/api/v1/accounting/summary")
         assert summary.status_code == 200
         body = summary.json()
-        assert body["credit_total"] == 5000
-        assert body["debit_total"] == 500
-        assert body["entry_count"] == 2
+        assert body["credit_total"] == 6500
+        assert body["debit_total"] == 9000
+        # All-tab received/outstanding must ignore debit paid amounts.
+        assert body["paid_total"] == 5000
+        assert body["unpaid_total"] == 1500
+        assert body["paid_total"] + body["unpaid_total"] == body["credit_total"]
+        assert body["entry_count"] == 3
 
         export = test_client.get("/api/v1/accounting/reports/export")
         assert export.status_code == 200

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Plus, X } from "lucide-react";
+import { Mic, MicOff, Plus, X } from "lucide-react";
 import { DateInput } from "@/components/accounting/DateInput";
 import { PaymentFields } from "@/components/accounting/PaymentFields";
 import {
@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import {
   createAccountingEntry,
+  fetchNextInvoiceNumber,
   formatCurrency,
   lookupCustomerByPhone,
   searchCustomersByPhone,
@@ -19,6 +20,13 @@ import {
   type CustomerMatch,
   type PaymentMethod
 } from "@/lib/accounting";
+import {
+  getSpeechRecognitionCtor,
+  transcriptToPersonName,
+  transcriptToPhoneDigits
+} from "@/lib/speechPhone";
+
+type VoiceField = "phone" | "name";
 
 type PurchaseFormModalProps = {
   open: boolean;
@@ -64,10 +72,21 @@ export function PurchaseFormModal({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [phoneHint, setPhoneHint] = useState<string | null>(null);
+  const [invoiceNumber, setInvoiceNumber] = useState<string | null>(null);
   const [phoneSuggestions, setPhoneSuggestions] = useState<CustomerMatch[]>([]);
   const [showPhoneSuggestions, setShowPhoneSuggestions] = useState(false);
+  const [listeningField, setListeningField] = useState<VoiceField | null>(
+    null
+  );
+  const [voiceSupported, setVoiceSupported] = useState(false);
+  const [phoneVoiceHint, setPhoneVoiceHint] = useState<string | null>(null);
+  const [nameVoiceHint, setNameVoiceHint] = useState<string | null>(null);
   const skipPhoneSuggestRef = useRef(false);
   const phoneFieldRef = useRef<HTMLDivElement | null>(null);
+  const recognitionRef = useRef<{
+    stop: () => void;
+    abort: () => void;
+  } | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -86,6 +105,7 @@ export function PurchaseFormModal({
       setIsPaid(entry.is_paid);
       setPaymentMethod(entry.payment_method ?? "");
       setNotes(entry.notes ?? "");
+      setInvoiceNumber(entry.invoice_number);
       setPhoneHint(null);
     } else {
       setEntryDate(todayIso());
@@ -95,12 +115,47 @@ export function PurchaseFormModal({
       setIsPaid(false);
       setPaymentMethod("");
       setNotes("");
+      setInvoiceNumber(null);
       setPhoneHint(null);
     }
     setError(null);
     setPhoneSuggestions([]);
     setShowPhoneSuggestions(false);
+    setListeningField(null);
+    setPhoneVoiceHint(null);
+    setNameVoiceHint(null);
+    recognitionRef.current?.abort();
+    recognitionRef.current = null;
   }, [open, entry]);
+
+  useEffect(() => {
+    setVoiceSupported(Boolean(getSpeechRecognitionCtor()));
+  }, []);
+
+  useEffect(() => {
+    if (open) return;
+    recognitionRef.current?.abort();
+    recognitionRef.current = null;
+    setListeningField(null);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || isEditing || !entryDate) return;
+    let cancelled = false;
+    const handle = window.setTimeout(() => {
+      void fetchNextInvoiceNumber(entryDate)
+        .then((next) => {
+          if (!cancelled) setInvoiceNumber(next);
+        })
+        .catch(() => {
+          if (!cancelled) setInvoiceNumber(null);
+        });
+    }, 150);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [open, isEditing, entryDate]);
 
   useEffect(() => {
     if (!open) return;
@@ -155,6 +210,115 @@ export function PurchaseFormModal({
     document.addEventListener("mousedown", handlePointerDown);
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, []);
+
+  function setFieldVoiceHint(field: VoiceField, message: string | null) {
+    if (field === "phone") setPhoneVoiceHint(message);
+    else setNameVoiceHint(message);
+  }
+
+  function stopVoiceListening() {
+    recognitionRef.current?.stop();
+    recognitionRef.current = null;
+    setListeningField(null);
+  }
+
+  function startVoiceListening(field: VoiceField) {
+    const Ctor = getSpeechRecognitionCtor();
+    if (!Ctor) {
+      setFieldVoiceHint(field, "Voice typing is not supported in this browser.");
+      return;
+    }
+
+    recognitionRef.current?.abort();
+    const recognition = new Ctor();
+    // Phone works better in Indian English digits; names in Hindi.
+    recognition.lang = field === "name" ? "hi-IN" : "en-IN";
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = (event) => {
+      let transcript = "";
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        transcript += event.results[i][0]?.transcript || "";
+      }
+      const isFinal = Boolean(
+        event.results[event.results.length - 1]?.isFinal
+      );
+
+      if (field === "phone") {
+        const digits = transcriptToPhoneDigits(transcript);
+        if (!digits) {
+          setPhoneVoiceHint("Could not hear a number. Try again.");
+          return;
+        }
+        setPhone(digits);
+        setShowPhoneSuggestions(true);
+        setPhoneVoiceHint(isFinal ? `Heard: ${digits}` : `Listening… ${digits}`);
+        return;
+      }
+
+      const name = transcriptToPersonName(transcript);
+      if (!name) {
+        setNameVoiceHint("Could not hear a name. Try again.");
+        return;
+      }
+      setCustomerName(name);
+      setNameVoiceHint(isFinal ? `Heard: ${name}` : `Listening… ${name}`);
+    };
+
+    recognition.onerror = (event) => {
+      const code = event.error || "unknown";
+      if (code === "not-allowed" || code === "service-not-allowed") {
+        setFieldVoiceHint(
+          field,
+          "Microphone permission is blocked for this site."
+        );
+      } else if (code === "no-speech") {
+        setFieldVoiceHint(
+          field,
+          "No speech detected. Tap the mic and try again."
+        );
+      } else if (code !== "aborted") {
+        setFieldVoiceHint(field, "Could not capture speech. Try again.");
+      }
+      setListeningField(null);
+      recognitionRef.current = null;
+    };
+
+    recognition.onend = () => {
+      setListeningField(null);
+      recognitionRef.current = null;
+    };
+
+    try {
+      recognitionRef.current = recognition;
+      setListeningField(field);
+      setFieldVoiceHint(
+        field,
+        field === "phone"
+          ? "Listening… say the phone number"
+          : "Listening… say the name in Hindi (saved in English spelling)"
+      );
+      recognition.start();
+    } catch {
+      setListeningField(null);
+      recognitionRef.current = null;
+      setFieldVoiceHint(field, "Could not start microphone. Try again.");
+    }
+  }
+
+  function toggleVoiceListening(field: VoiceField) {
+    if (listeningField === field) {
+      stopVoiceListening();
+      setFieldVoiceHint(field, null);
+      return;
+    }
+    if (listeningField && listeningField !== field) {
+      setFieldVoiceHint(listeningField, null);
+    }
+    startVoiceListening(field);
+  }
 
   if (!open) return null;
 
@@ -293,20 +457,36 @@ export function PurchaseFormModal({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          <label className="block text-sm">
-            <span className="mb-1.5 block text-neutral-600">Date</span>
-            <DateInput required value={entryDate} onChange={setEntryDate} />
-          </label>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block text-sm">
+              <span className="mb-1.5 block text-neutral-600">Date</span>
+              <DateInput required value={entryDate} onChange={setEntryDate} />
+            </label>
+            <label className="block text-sm">
+              <span className="mb-1.5 block text-neutral-600">Invoice number</span>
+              <input
+                type="text"
+                readOnly
+                value={invoiceNumber || "—"}
+                className="w-full rounded-xl border border-sand/60 bg-champagne/60 px-3 py-2.5 text-ink outline-none"
+              />
+              {!isEditing && lines.length > 1 ? (
+                <span className="mt-1 block text-xs text-neutral-500">
+                  First item uses this number; extra items get the next ones.
+                </span>
+              ) : null}
+            </label>
+          </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div ref={phoneFieldRef} className="relative block text-sm">
-              <label className="block">
-                <span className="mb-1.5 block text-neutral-600">
-                  Phone number{" "}
-                  <span className="normal-case tracking-normal text-neutral-400">
-                    (optional)
-                  </span>
+              <span className="mb-1.5 block text-neutral-600">
+                Phone number{" "}
+                <span className="normal-case tracking-normal text-neutral-400">
+                  (optional)
                 </span>
+              </span>
+              <div className="relative">
                 <input
                   type="tel"
                   autoComplete="off"
@@ -314,16 +494,40 @@ export function PurchaseFormModal({
                   onChange={(e) => {
                     setPhone(e.target.value);
                     setShowPhoneSuggestions(true);
+                    setPhoneVoiceHint(null);
                   }}
                   onFocus={() => {
                     if (phoneSuggestions.length > 0) {
                       setShowPhoneSuggestions(true);
                     }
                   }}
-                  placeholder="Type to find existing customer"
-                  className="w-full rounded-xl border border-sand/60 bg-white px-3 py-2.5 text-ink outline-none focus:border-ink"
+                  placeholder="Type or tap mic to speak"
+                  className="w-full rounded-xl border border-sand/60 bg-white py-2.5 pl-3 pr-12 text-ink outline-none focus:border-ink"
                 />
-              </label>
+                {voiceSupported ? (
+                  <button
+                    type="button"
+                    onClick={() => toggleVoiceListening("phone")}
+                    aria-pressed={listeningField === "phone"}
+                    aria-label={
+                      listeningField === "phone"
+                        ? "Stop voice typing"
+                        : "Speak phone number"
+                    }
+                    className={`absolute right-1.5 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full transition ${
+                      listeningField === "phone"
+                        ? "bg-red-600 text-white"
+                        : "bg-champagne text-ink hover:bg-sand/50"
+                    }`}
+                  >
+                    {listeningField === "phone" ? (
+                      <MicOff className="h-4 w-4" />
+                    ) : (
+                      <Mic className="h-4 w-4" />
+                    )}
+                  </button>
+                ) : null}
+              </div>
               {showPhoneSuggestions && phoneSuggestions.length > 0 ? (
                 <ul
                   role="listbox"
@@ -347,22 +551,60 @@ export function PurchaseFormModal({
                   ))}
                 </ul>
               ) : null}
-              {phoneHint ? (
+              {phoneVoiceHint ? (
+                <span className="mt-1 block text-xs text-sand">
+                  {phoneVoiceHint}
+                </span>
+              ) : phoneHint ? (
                 <span className="mt-1 block text-xs text-sand">{phoneHint}</span>
               ) : null}
             </div>
-            <label className="block text-sm">
+            <div className="block text-sm">
               <span className="mb-1.5 block text-neutral-600">
                 Customer name
               </span>
-              <input
-                type="text"
-                required
-                value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                className="w-full rounded-xl border border-sand/60 bg-white px-3 py-2.5 text-ink outline-none focus:border-ink"
-              />
-            </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  required
+                  value={customerName}
+                  onChange={(e) => {
+                    setCustomerName(e.target.value);
+                    setNameVoiceHint(null);
+                  }}
+                  placeholder="Type or tap mic to speak"
+                  className="w-full rounded-xl border border-sand/60 bg-white py-2.5 pl-3 pr-12 text-ink outline-none focus:border-ink"
+                />
+                {voiceSupported ? (
+                  <button
+                    type="button"
+                    onClick={() => toggleVoiceListening("name")}
+                    aria-pressed={listeningField === "name"}
+                    aria-label={
+                      listeningField === "name"
+                        ? "Stop voice typing"
+                        : "Speak customer name"
+                    }
+                    className={`absolute right-1.5 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full transition ${
+                      listeningField === "name"
+                        ? "bg-red-600 text-white"
+                        : "bg-champagne text-ink hover:bg-sand/50"
+                    }`}
+                  >
+                    {listeningField === "name" ? (
+                      <MicOff className="h-4 w-4" />
+                    ) : (
+                      <Mic className="h-4 w-4" />
+                    )}
+                  </button>
+                ) : null}
+              </div>
+              {nameVoiceHint ? (
+                <span className="mt-1 block text-xs text-sand">
+                  {nameVoiceHint}
+                </span>
+              ) : null}
+            </div>
           </div>
 
           <div className="space-y-3">

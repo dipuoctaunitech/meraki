@@ -21,6 +21,7 @@ export type AccountingEntry = {
   total: number;
   is_paid: boolean;
   payment_method: PaymentMethod | null;
+  invoice_number: string | null;
   notes: string | null;
   created_at: string;
 };
@@ -51,6 +52,7 @@ export type SortOrder = "asc" | "desc";
 export type ReportFilters = {
   entry_type?: EntryType | "";
   is_paid?: "" | "true" | "false";
+  payment_method?: PaymentMethod | "";
   date_from?: string;
   date_to?: string;
   name?: string;
@@ -77,6 +79,7 @@ function toQuery(filters: ReportFilters): string {
   if (filters.is_paid === "true" || filters.is_paid === "false") {
     params.set("is_paid", filters.is_paid);
   }
+  if (filters.payment_method) params.set("payment_method", filters.payment_method);
   if (filters.date_from) params.set("date_from", filters.date_from);
   if (filters.date_to) params.set("date_to", filters.date_to);
   if (filters.name?.trim()) params.set("name", filters.name.trim());
@@ -111,6 +114,18 @@ async function readError(response: Response): Promise<string> {
     // ignore parse errors
   }
   return `Request failed (${response.status})`;
+}
+
+export async function fetchNextInvoiceNumber(
+  entryDate: string
+): Promise<string> {
+  const params = new URLSearchParams({ entry_date: entryDate });
+  const response = await apiFetch(
+    `${apiBase()}/accounting/invoices/next?${params.toString()}`
+  );
+  if (!response.ok) throw new Error(await readError(response));
+  const data = await response.json();
+  return data.invoice_number as string;
 }
 
 export async function createAccountingEntry(
