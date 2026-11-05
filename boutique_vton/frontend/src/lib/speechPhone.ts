@@ -336,3 +336,99 @@ export function transcriptToPersonName(transcript: string): string {
   if (!cleaned) return "";
   return titleCaseName(cleaned);
 }
+
+/** Clean spoken item / product name; Hindi script → English spelling. */
+export function transcriptToItemName(transcript: string): string {
+  return transcriptToPersonName(transcript);
+}
+
+const CURRENCY_NOISE =
+  /\b(rupees?|ruppee|rs\.?|inr|only|rupee)\b|₹/gi;
+
+/**
+ * Parse a spoken amount into a numeric string (price / line total).
+ * Accepts digits, "point/dot", and digit words ("two five zero zero").
+ */
+export function transcriptToAmount(transcript: string): string {
+  let cleaned = transcript
+    .toLowerCase()
+    .replace(CURRENCY_NOISE, " ")
+    .replace(/,/g, "")
+    .replace(/\b(point|dot)\b/g, " . ")
+    .replace(/[^a-z0-9.\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) return "";
+
+  // Prefer an explicit numeric token when present (e.g. "2500.50").
+  const numericMatch = cleaned.match(/\d+(?:\.\d+)?/);
+  if (numericMatch && (numericMatch[0].includes(".") || /\d{2,}/.test(numericMatch[0]))) {
+    const value = Number(numericMatch[0]);
+    if (Number.isFinite(value) && value >= 0) {
+      return String(Math.round(value * 100) / 100);
+    }
+  }
+
+  const tokens = cleaned.split(" ");
+  const parts: string[] = [];
+  let i = 0;
+  let seenDot = false;
+  while (i < tokens.length) {
+    const token = tokens[i];
+    if (token === ".") {
+      if (!seenDot && parts.length > 0) {
+        parts.push(".");
+        seenDot = true;
+      }
+      i += 1;
+      continue;
+    }
+    if (/^\d+$/.test(token)) {
+      parts.push(...token.split(""));
+      i += 1;
+      continue;
+    }
+    if ((token === "double" || token === "triple") && i + 1 < tokens.length) {
+      const next = DIGIT_WORDS[tokens[i + 1]];
+      if (next) {
+        const times = token === "triple" ? 3 : 2;
+        parts.push(...Array(times).fill(next));
+        i += 2;
+        continue;
+      }
+    }
+    const mapped = DIGIT_WORDS[token];
+    if (mapped) parts.push(mapped);
+    i += 1;
+  }
+
+  if (!parts.length) {
+    if (numericMatch) {
+      const value = Number(numericMatch[0]);
+      if (Number.isFinite(value) && value >= 0) {
+        return String(Math.round(value * 100) / 100);
+      }
+    }
+    return "";
+  }
+
+  const joined = parts.join("");
+  // Guard against multiple dots from noisy speech.
+  const firstDot = joined.indexOf(".");
+  const normalized =
+    firstDot === -1
+      ? joined
+      : `${joined.slice(0, firstDot)}.${joined.slice(firstDot + 1).replace(/\./g, "")}`;
+  const value = Number(normalized);
+  if (!Number.isFinite(value) || value < 0) return "";
+  return String(Math.round(value * 100) / 100);
+}
+
+/** Parse spoken quantity as a positive integer string. */
+export function transcriptToQuantity(transcript: string): string {
+  const amount = transcriptToAmount(transcript);
+  if (!amount) return "";
+  const qty = Math.max(1, Math.round(Number(amount)));
+  if (!Number.isFinite(qty) || qty < 1) return "";
+  return String(qty);
+}
